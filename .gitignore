@@ -1,0 +1,7 @@
+*.o
+.deps/
+obsolete/
+philoxbench
+philoxexample
+tests
+a.out
