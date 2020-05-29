@@ -9,7 +9,7 @@
 
 namespace std{
 
-template<typename KPRF, unsigned CTR_BITS=KPRF::in_bits>
+template<typename KPRF>
 class counter_based_engine{
 public:
     using in_value_type = KPRF::in_value_type;
@@ -24,7 +24,6 @@ public:
 
 private:
     static_assert(numeric_limits<result_value_type>::max() >= result_N);
-    static_assert(CTR_BITS > 0 && CTR_BITS <= in_bits);
     // Other assertions, that we rely on, and that should be part of a KPRF concept:
     //  {key_N, in_N, result_N} > 0
     //  {key_bits, in_bits, result_bits} > 0
@@ -33,11 +32,6 @@ private:
     static constexpr in_value_type in_mask = detail::fffmask<in_value_type, in_bits>;
     static constexpr key_value_type key_mask = detail::fffmask<key_value_type, key_bits>;
     static constexpr result_value_type result_mask = detail::fffmask<result_value_type, result_bits>;
-
-    static constexpr in_value_type ctr_mask = detail::fffmask<in_value_type, CTR_BITS>;
-    static constexpr unsigned in_back_bits = in_bits - CTR_BITS;
-    static constexpr in_value_type in_back_mask = detail::fffmask<in_value_type, in_back_bits>;
-    static constexpr in_value_type ctr_increment = in_back_mask + 1;
 
     array<in_value_type, in_N> in;
     KPRF kprf;
@@ -65,14 +59,14 @@ public:
         if(ri == 0){
             // call kprf and increment ctr
             results = kprf(in);
-            in.back() = (in.back() + ctr_increment) & in_mask;
+            in.back() = (in.back() + 1) & in_mask;
         }
         result_type ret = results[ri++];
         if(ri == result_N){
             // check for overflow:  if the counter bits of in.back()
             // have wrapped around to zero, leave ri = result_N, which
             // will make the next call throw.
-            if((in.back() & (~in_back_mask)) != 0)
+            if(in.back() != 0)
                 [[likely]] ri = 0;
         }
         ridxref() = ri;
@@ -111,7 +105,7 @@ public:
                 v |= in_value_type(*k32p++) << (32*j);
             v &= in_mask;
         }            
-        iv.back() &= in_back_mask;
+        iv.back() = 0;
 
         seed(keys, iv);
     }
@@ -129,18 +123,18 @@ public:
         unsigned long long jumpll = jump + oldridx - (!oldridx && newridx);
         jumpll /= result_N;
         jumpll += !oldridx;
-        in_value_type jumpctr = jumpll & ctr_mask;
+        in_value_type jumpctr = jumpll & in_mask;
         if( jumpll != jumpctr )
             [[unlikely]] throw out_of_range("counter_based_engine::discard");
-        in_value_type oldctr = in.back() >> in_back_bits;
-        in_value_type newctr = (jumpctr-1 + oldctr) & ctr_mask;
+        in_value_type oldctr = in.back();
+        in_value_type newctr = (jumpctr-1 + oldctr) & in_mask;
         if(newctr < oldctr-1)
             [[unlikely]] throw out_of_range("counter_based_engine::discard");
-        in.back() = (in.back()&in_back_mask) | (newctr << in_back_bits);
+        in.back() = newctr;
         if(newridx){
             if(jumpctr)
                 results = kprf(in);
-            in.back() = (in.back() + ctr_increment) & in_mask;
+            in.back() = (in.back() + 1) & in_mask;
         }else if(newctr == 0){
             newridx = result_N;
         }
@@ -148,7 +142,7 @@ public:
         ridxref() = newridx;
     }catch(out_of_range&){
         ridxref() = result_N;
-        in.back() = in.back() & in_back_mask; // so all overflown engines compare equal and serialize consistently.
+        in.back() = 0; // so all overflown engines compare equal and serialize consistently.
         throw;
     }
 
@@ -245,8 +239,8 @@ public:
         auto ine = ranges::end(_in);
         for(auto& e : in)
             e = (inp == ine) ? 0 : (*inp++) & in_mask;
-        if(in.back() != (in.back() & in_back_mask))
-            throw out_of_range("counter_based_engine::seed():  most significant CTR_BITS of in.back() must be zero");
+        if(in.back() != 0)
+            throw out_of_range("counter_based_engine::seed():  in.back() must be zero");
         ridxref() = 0;
     }
     
@@ -271,11 +265,5 @@ public:
     // - a seek(ull) method to set the internal counter.
     
 };
-
-// This allows us to write:
-//   auto eng = make_counter_based_engine<8>(my_kprf, my_iv);
-template <unsigned CTR_BITS, typename KPRF, detail::integral_input_range InRange>
-counter_based_engine<KPRF, CTR_BITS> make_counter_based_engine(KPRF kprf, InRange iv) { return {kprf, iv}; }
-// It's too bad that one can't specify *partial* CTAD rules.
 
 } // namespace std

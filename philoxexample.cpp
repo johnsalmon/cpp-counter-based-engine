@@ -118,10 +118,10 @@ int main(int argc, char **argv){
    // Suppose we had a monte carlo simulation that required three normally
     // distributed values for each of a large number of "atoms" at each of
     // a large number of timesteps.
-    philox2x32_kprf kprf({999}); // global seed for entire "simulation"
+    philox4x32_kprf kprf({999}); // global seed for entire "simulation"
 
     const int Ntimesteps = 2; // can be as large as 2^32
-    const int Natoms = 3;     // can be as large as 2^26 (see  CTR_BITS=6, below)
+    const int Natoms = 3;     // can be as large as 2^32
     
     cout << "Generating normal random values from program state rather than sequentially:\n";
     cout << "t   aid      n1        n2         n3\n";
@@ -134,10 +134,7 @@ int main(int argc, char **argv){
             // keyed_prf generator allows the overall algorithm
             // freedom that is not available when using a conventional
             // Random Number Generator.
-            counter_based_engine<philox2x32_kprf, 6> eng{kprf, {timestep, atomid}};
-            // eng has CTR_BITS=6, so it can be called 128 times.
-            // It's *extremely* unlikely that three normals will
-            // require 128 calls to the underlying engine.
+            counter_based_engine<philox4x32_kprf> eng{kprf, {timestep, atomid}};
             normal_distribution nd;
             auto n1 = nd(eng);
             auto n2 = nd(eng);

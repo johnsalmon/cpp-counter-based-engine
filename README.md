@@ -193,7 +193,7 @@ Random Number Engine.
 
 A counter_based_engine is a template class declared as:
 
-    template <typename KPRF, unsigned CTR_BITS = KPRF::in_bits>
+    template <typename KPRF>
     class counter_based_engine;
 
 The behavior of the counter_based_engine is specified in terms of these
@@ -225,9 +225,9 @@ insert and extract each of the components of the state, respectively.
        do nothing, return
    if rindex is zero,
        copy iv into an array, in, suitable as input to the KPRF.
-       in[in_N-1] = in[in_N-1] + (counter x 2^(in_bits - CTR_BITS))
+       in[in_N-1] = counter
        results = kprf(in)
-       counter = (counter + 1) modulo 2^CTR_BITS
+       counter = (counter + 1) modulo 2^in_bits
    Y = results[rindex]
    rindex = (rindex+1) modulo result_N
    if rindex is zero and counter is zero,
@@ -249,24 +249,24 @@ insert and extract each of the components of the state, respectively.
   the constructor's or seed() method's arguments.
 
   To seed a CBE from a seed_seq, the seed_seq.generate is called once
-  to generate enough bits to populate the KPRF's key and the CBE's iv.
-  Then the most significant CTR_BITS bits of iv[in_N-1] are cleared,
-  counter and rindex are set to 0 and counter_overflow is cleared.
+  to generate enough bits to populate the KPRF's key and all but the
+  last element of the CBE's iv.  The counter and rindex are set to 0
+  and counter_overflow is cleared.
 
 ### General properties of counter_based_engine:
 
 A counter_based_engine allows for
 
-    2^(key_bits*key_N + in_bits*in_N - CTR_BITS)
+    2^(key_bits*key_N + in_bits*(in_N-1))
 
-*different* random sequences, each of length result_N*2^CTR_BITS.
+*different* random sequences, each of length result_N*2^in_bits
 
 A counter_based_engine's size is: in_N + result_N + sizeof(KPRF)
 
-For philox4x64 with CTR_BITS=64, there are 2^320 different random
+For philox4x64, there are 2^320 different random
 sequences of length 2^66.  The size is 10 64-bit integers.
 
-For philox2x32 with CTR_BITS=32, there are 2^64 different random
+For philox2x32, there are 2^64 different random
 sequences of length 2^33.  The size is 5 32-bit integers.
 
 ### Extensions to the required Uniform Random Number Engine API:
@@ -300,9 +300,8 @@ counter_based_engine has the following members:
 - A constructor and corresponding seed member function that take as
   arguments two input_ranges (or initializer lists).  The first is
   passed to the kprf's constructor and a second is used to initialize
-  the CBE's 'iv' member.  An out_of_range exception is thrown if the
-  value assigned to iv[in_N-1] is greater than or equal to
-  2^(in_bits - CTR_BITS).
+  the CBE's 'iv' member.  An out_of_range exception is thrown if
+  ranges::size(in) is greater than or equal to in_N-1.
 
   It can be used (with initializer_lists) like:
 
@@ -324,15 +323,3 @@ counter_based_engine has the following members:
       ...
       kprf_t::in_value_type c = ..., d=..., e=...; // 2^192 different distinct values
       auto eng = counter_based_engine(prf, {c, d, e}); // 2^320 distinct engines
-
-- Finally, the class in counter_based_engine.hpp has an optional
-  CTR_BITS template parameter that determines how many bits of the
-  input value are available for sequencing.  Applications that wish to
-  use a large number of short sequences can choose a small value of
-  CTR_BITS.  An example is shown in example.cpp.  This extra
-  generality costs almost nothing to implement and allows the program
-  slightly more flexibility to generate large number of distinct
-  sequences, e.g., more than 2^64 different sequences based on
-  philox2x32_kprf.
-
-

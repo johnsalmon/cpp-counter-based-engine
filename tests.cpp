@@ -56,6 +56,7 @@ int main(int argc, char **argv){
     dokat<philox4x32_kprf>("00000000 00000000 00000000 00000000 00000000 00000000   6627e8d5 e169c58d bc57ac4c 9b00dbd8");
     dokat<philox4x32_kprf>("ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff   408f276d 41c83b0e a20bc7c6 6d5451fd");
     dokat<philox4x32_kprf>("243f6a88 85a308d3 13198a2e 03707344 a4093822 299f31d0   d16cfe09 94fdcceb 5001e420 24126ea1");
+    cout << "PASSED: known-answer-tests" << endl;
 
     // Test discard.  It's by far the trickiest piece of counter_based_engine
     eng_t eng1;
@@ -71,14 +72,20 @@ int main(int argc, char **argv){
         //cout << "After eng2: " << eng2 << "\n";
         assert(eng1 == eng2);
     }
+    cout << "PASSED: discard" << endl;
 
-    static const unsigned CTR_BITS=6;
-    counter_based_engine<philox4x64_kprf, CTR_BITS> eng3;
+    // FIXME - test out_of_range behavior.  (This was
+    // much easeir when we could set  CTR_BITS=small and
+    // easily exhaust a generator.  Running through 2^34
+    // values at 200M/sec will take about a minute...
+    using eng_t = counter_based_engine<philox4x32_kprf>;
+    eng_t eng3;
+
     bool threw;
-    long Navail = (decltype(eng3)::kprf_type::result_N<<CTR_BITS);
+    cout << "It takes a couple of minutes to exhaust a 32-bit counter on a 3GHz machine.  Be patient..." << endl;
+    auto Navail = uint64_t(eng_t::result_N)<<eng_t::in_bits;
     for(int loop : {1, 2}){
-        (void) loop;
-        for(long i=0; i<Navail; ++i)
+        for(uint64_t i=0; i<Navail; ++i)
             eng3();
         // The next call should throw
         threw = false;
@@ -98,41 +105,10 @@ int main(int argc, char **argv){
         }
         assert(threw);
         // Let's reseed.  Shouldn't throw...
+        cout << "PASSED:  out_of_range test " << loop << endl;
         eng3.seed();
     }
 
-    // Let's try that discard loop on eng3, checking that
-    // the throw the same way and they leave the engine
-    // in the same state.
-    eng3.seed({0},  {0});
-    auto eng4 = eng3;
-    bool eng3_threw, eng4_threw;
-    for(size_t i=0; i<10000000; ++i){
-        auto jump = eng3() % 18; eng4();
-        //cout << hex << "\nBefore eng3: " << eng3 << "\n";
-        eng3_threw = false;
-        try{
-            for(size_t j=0; j<jump; ++j)
-                eng3();
-        }catch(out_of_range&){
-            eng3_threw = true;
-        }
-        eng4_threw = false;
-        try{
-            eng4.discard(jump);
-        }catch(out_of_range&){
-            eng4_threw = true;
-        }
-        //cout << "jump: " << jump << "\n";
-        //cout << "After eng3: " << (eng3_threw?"threw ":"") << eng3 << "\n";
-        //cout << "After eng4: " << (eng4_threw?"threw ":"") << eng4 << "\n";
-        assert(eng3_threw == eng4_threw);
-        assert(eng3 == eng4);
-        if(eng3_threw){
-            eng3.seed({0}, {0});
-            eng4.seed({0}, {0});
-        }
-    }
     
     return 0;
 }
