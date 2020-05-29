@@ -131,17 +131,20 @@ private:
 }; 
 
 using philox2x32_kprf = philox_keyed_prf<32, 2, 10, 0xD256D193, 0x9E3779B9>;
-using philox4x64_kprf = philox_keyed_prf<64, 4, 10,
-                                    0xD2E7470EE14C6C93,
-                                    0x9E3779B97F4A7C15,
-                                    0xCA5A826395121157,
-                                    0xBB67AE8584CAA73B>;
+using philox4x32_kprf = philox_keyed_prf<32, 4, 10, 0xD2511F53, 0x9E3779B9,
+                                                    0xCD9E8D57, 0xBB67AE85>;
+
+using philox2x64_kprf = philox_keyed_prf<64, 2, 10, 0xD2B74407B1CE6E93, 0x9E3779B97F4A7C15>;
+using philox4x64_kprf = philox_keyed_prf<64, 4, 10, 0xD2E7470EE14C6C93, 0x9E3779B97F4A7C15,
+                                                    0xCA5A826395121157, 0xBB67AE8584CAA73B>;
 } // namespace std
 
 #include "counter_based_engine.hpp"
 namespace std{
 
 using philox2x32 = counter_based_engine<philox2x32_kprf>;
+using philox4x32 = counter_based_engine<philox4x32_kprf>;
+using philox2x64 = counter_based_engine<philox2x64_kprf>;
 using philox4x64 = counter_based_engine<philox4x64_kprf>;
 
 } // namespace std
