@@ -106,7 +106,7 @@ int main(int argc, char **argv){
     
     // Check that the example in proposal.txt actually works...
     {
-        using kprf_t = philox4x64_kprf;
+        using kprf_t = philox4x64_kprf<>;
         kprf_t::key_value_type a = 1, b = 2;
         kprf_t kprf({a, b});     // 2^128 possible distinct kprf's
         // ...
@@ -118,7 +118,7 @@ int main(int argc, char **argv){
    // Suppose we had a monte carlo simulation that required three normally
     // distributed values for each of a large number of "atoms" at each of
     // a large number of timesteps.
-    philox4x32_kprf kprf({999}); // global seed for entire "simulation"
+    philox4x32_kprf<> kprf({999}); // global seed for entire "simulation"
 
     const int Ntimesteps = 2; // can be as large as 2^32
     const int Natoms = 3;     // can be as large as 2^32
@@ -134,7 +134,7 @@ int main(int argc, char **argv){
             // keyed_prf generator allows the overall algorithm
             // freedom that is not available when using a conventional
             // Random Number Generator.
-            counter_based_engine<philox4x32_kprf> eng{kprf, {timestep, atomid}};
+            counter_based_engine<philox4x32_kprf<>> eng{kprf, {timestep, atomid}};
             normal_distribution nd;
             auto n1 = nd(eng);
             auto n2 = nd(eng);

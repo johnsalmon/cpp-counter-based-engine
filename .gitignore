@@ -2,7 +2,7 @@
 *~
 .deps/
 obsolete/
-philoxbench
+bench
 philoxexample
 tests
 a.out

@@ -6,7 +6,9 @@ CXXFLAGS+=-O3
 #CXXFLAGS+=-O0 -ggdb
 TARGET_ARCH+=-pthread # for philoxbench
 
-all: philoxexample philoxbench tests
+all: philoxexample tests bench
+
+threefry.o : CPPFLAGS+=-I/u/nyc/salmonj/g/gardenfs/core123/include
 
 LINK.o = $(CXX) $(LDFLAGS) $(TARGET_ARCH)
 
