@@ -9,33 +9,30 @@
 
 namespace std{
 
-template<typename KPRF>
+template<typename PRF>
 class counter_based_engine{
 public:
-    using in_value_type = KPRF::in_value_type;
-    using key_value_type = KPRF::key_value_type;
-    using result_value_type = KPRF::result_value_type;
-    static constexpr size_t in_bits = KPRF::in_bits;
-    static constexpr size_t key_bits = KPRF::key_bits;
-    static constexpr size_t result_bits = KPRF::result_bits;
-    static constexpr size_t in_N = KPRF::in_N;
-    static constexpr size_t key_N = KPRF::key_N;
-    static constexpr size_t result_N = KPRF::result_N;
+    using in_value_type = PRF::in_value_type;
+    using result_value_type = PRF::result_value_type;
+    static constexpr size_t seed_bits = PRF::in_bits;
+    static constexpr size_t result_bits = PRF::result_bits;
+    static constexpr size_t seed_N = PRF::in_N - 1;
+    static constexpr size_t result_N = PRF::result_N;
 
 private:
+    static constexpr size_t in_N = PRF::in_N;
+    static constexpr size_t in_bits = PRF::in_bits;
     static_assert(numeric_limits<result_value_type>::max() >= result_N);
-    // Other assertions, that we rely on, and that should be part of a KPRF concept:
-    //  {key_N, in_N, result_N} > 0
-    //  {key_bits, in_bits, result_bits} > 0
+    // Other assertions, that we rely on, and that should be part of a PRF concept:
+    //  {in_N, result_N} > 0
+    //  {in_bits, result_bits} > 0
     //  unsigned_integral({key_value_type, in_value_type, result_value_type})
 
-    static constexpr in_value_type in_mask = detail::fffmask<in_value_type, in_bits>;
-    static constexpr key_value_type key_mask = detail::fffmask<key_value_type, key_bits>;
+    static constexpr in_value_type in_mask = detail::fffmask<in_value_type, PRF::in_bits>;
     static constexpr result_value_type result_mask = detail::fffmask<result_value_type, result_bits>;
 
-    array<in_value_type, in_N> in;
-    KPRF kprf;
-    KPRF::result_type results;
+    array<in_value_type, PRF::in_N> in;
+    PRF::result_type results;
     // To save space, store the index of the next result to be returned in the 0th results slot.
     const auto& ridxref() const {
         return results[0];
@@ -45,7 +42,7 @@ private:
     }
 
 public:
-    // First, satisfy the requirements for a uniform_result_bit_generator
+    // First, satisfy the requirements for a uniform_random_bit_generator
     // result_type
     using result_type = result_value_type;
     // min, max
@@ -57,8 +54,8 @@ public:
         if(ri >= result_N)
             throw out_of_range("counter_based_engine()");
         if(ri == 0){
-            // call kprf and increment ctr
-            results = kprf(in);
+            // call prf and increment ctr
+            results = PRF{}(in);
             in.back() = (in.back() + 1) & in_mask;
         }
         result_type ret = results[ri++];
@@ -84,34 +81,25 @@ public:
     template <typename SeedSeq> // FIXME - disambiguate result_type
     void seed(SeedSeq& s){
         // Generate 32-bits at a time with the SeedSeq.
-        // Generate enough to fill both a KPRF::key and KPRF::in
-        constexpr size_t N32_per_key = (key_bits-1)/32 + 1;
+        // Generate enough to fill both a PRF::key and PRF::in
         constexpr size_t N32_per_in = (in_bits-1)/32 + 1;
-        array<uint_fast32_t, N32_per_key * key_N + N32_per_in * in_N> k32;
+        array<uint_fast32_t, N32_per_in * seed_N> k32;
         s.generate(k32.begin(), k32.end());
 
-        array<key_value_type, key_N> keys;
-        auto k32p = k32.begin();
-        for(auto& k : keys){
-            k = 0;
-            for(size_t j=0; j<N32_per_key; ++j)
-                k |= key_value_type(*k32p++) << (32*j);
-            k &= key_mask;
-        }
-        array<in_value_type, in_N> iv;
+        auto k32p = begin(k32);
+        array<in_value_type, seed_N> iv;
         for(auto& v : iv){
             v = 0;
             for(size_t j=0; j<N32_per_in; ++j)
                 v |= in_value_type(*k32p++) << (32*j);
             v &= in_mask;
         }            
-        iv.back() = 0;
 
-        seed(keys, iv);
+        seed(iv);
     }
 
     // (in)equality operators
-    bool operator==(const counter_based_engine& rhs) const { return in == rhs.in && kprf == rhs.kprf && ridxref() == rhs.ridxref(); }
+    bool operator==(const counter_based_engine& rhs) const { return in == rhs.in && ridxref() == rhs.ridxref(); }
     bool operator!=(const counter_based_engine& rhs) const { return !operator==(rhs); }
 
     // discard - N.B.  There are a lot of tricky corner cases here
@@ -133,7 +121,7 @@ public:
         in.back() = newctr;
         if(newridx){
             if(jumpctr)
-                results = kprf(in);
+                results = PRF{}(in);
             in.back() = (in.back() + 1) & in_mask;
         }else if(newctr == 0){
             newridx = result_N;
@@ -150,7 +138,6 @@ public:
     template <typename CharT, typename Traits>
     friend basic_ostream<CharT, Traits>& operator<<(basic_ostream<CharT, Traits>& os, const counter_based_engine& p){
         // FIXME - save/restore os state
-        os << p.kprf;
         ostream_iterator<in_value_type> osin(os, " ");
         ranges::copy(p.in, osin);
         return os << p.ridxref();
@@ -158,13 +145,12 @@ public:
     template<typename CharT, typename Traits>
     friend basic_istream<CharT, Traits>& operator>>(basic_istream<CharT, Traits>& is, counter_based_engine& p){
         // FIXME - save/restore is state
-        is >> p.kprf;
         istream_iterator<in_value_type> isiin(is);
         copy_n(isiin, in_N, p.in.begin());
         result_value_type ridx;
         is >> ridx;
         if(ridx)
-            p.results = p.kprf(p.in);
+            p.results = PRF(p.in);
         p.ridxref() = ridx;
         return is;
     }
@@ -174,89 +160,38 @@ public:
     // counter_based_engine has public methods and types that are not
     // required for a Uniform Random Number Engine:
 
-    // - the type of the underlying KPRF and a reference to it.
-    using kprf_type = KPRF;
-    kprf_type getkprf() const{
-        return kprf;
-    }
+    // - the type of the underlying PRF and a reference to it.
+    using prf_type = PRF;
 
-    // Constructor/seed from a key and an iv:
-    template <detail::integral_input_range KeyRange, detail::integral_input_range InRange>
-    explicit counter_based_engine(KeyRange k, InRange iv){
-        seed(k, iv);
-    }
-    template <detail::integral_input_range KeyRange, detail::integral_input_range InRange>
-    void seed(KeyRange k, InRange iv){
-        seed(kprf_type(k), iv);
-    }
-    
-    // Constructors and seed members with initializer_lists:
-    // N.B.  These allow the caller to write:
-    //    eng.seed({1,2}, {3,4,5});
-    // Without it, the caller would have to write:
-    //    auto k = {1,2};
-    //    auto iv= {3, 4, 5};
-    //    eng.seed(k, iv);
-    // Would something like p1167R0 simplify this?
-    template <integral T, detail::integral_input_range InRange>
-    explicit counter_based_engine(initializer_list<T> il, InRange iv){
-        seed(il, iv);
-    }
-    template <integral T, detail::integral_input_range InRange>
-    void seed(initializer_list<T> il, InRange iv){
-        seed(ranges::subrange(il), iv);
-    }
-
-    template <detail::integral_input_range KeyRange, integral T>
-    explicit counter_based_engine(KeyRange k, initializer_list<T> il){
-        seed(k, il);
-    }
-    template <detail::integral_input_range KeyRange, integral T>
-    void seed(KeyRange k, initializer_list<T> il){
-        seed(k, ranges::subrange(il));
-    }
-
-    template <integral Tk, integral Ti>
-    explicit counter_based_engine(initializer_list<Tk> ilk, initializer_list<Ti> ili){
-        seed(ilk, ili);
-    }
-    template <integral Tk, integral Ti>
-    void seed(initializer_list<Tk> ilk, initializer_list<Ti> ili){
-        seed(ranges::subrange(ilk), ranges::subrange(ili));
-    }
-
-
-    // Constructor from a kprf and an 'iv'
+    // Constructor from an 'seed-range'
     template <detail::integral_input_range InRange>
-    explicit counter_based_engine(const KPRF& _kprf, InRange iv){
-        seed(_kprf, iv);
+    explicit counter_based_engine(InRange iv){
+        seed(iv);
     }
     template <detail::integral_input_range InRange>
-    void seed(KPRF _kprf, InRange _in){
-        kprf = move(_kprf);
+    void seed(InRange _in){
         // copy _in to in:
         auto inp = ranges::begin(_in);
         auto ine = ranges::end(_in);
-        for(auto& e : in)
-            e = (inp == ine) ? 0 : (*inp++) & in_mask;
-        if(in.back() != 0)
-            throw out_of_range("counter_based_engine::seed():  in.back() must be zero");
+        for(size_t i=0; i<seed_N; ++i)
+            in[i] = (inp == ine) ? 0 : (*inp++) & in_mask; // ?? throw if *inp > in_mask??
+        in.back() = 0;
         ridxref() = 0;
     }
     
     template <integral T>
-    explicit counter_based_engine(const KPRF& _kprf, initializer_list<T> il){
-        seed(_kprf, il);
+    explicit counter_based_engine(initializer_list<T> il){
+        seed(il);
     }
     template <integral T>
-    void seed(const KPRF& _kprf, initializer_list<T> il){
-        seed(_kprf, ranges::subrange(il));
+    void seed(initializer_list<T> il){
+        seed(ranges::subrange(il));
     }
+    
 
     // Additional possible extensions:
     //
     // - a method to get the iv.
-    // - a method to set the iv (leaving the kprf/key alone, but resetting counter to 0).
     // - methods that return the sequence length and how many calls are left.  N.B.  these
     //   would need a way to return a value larger than numeric_limits<uintmax_t>::max().
     // - a rewind() method (the opposite of discard).

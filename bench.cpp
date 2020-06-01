@@ -1,5 +1,5 @@
-#include "threefry_keyed_prf.hpp"
-#include "philox_keyed_prf.hpp"
+#include "threefry_prf.hpp"
+#include "philox_prf.hpp"
 #include "counter_based_engine.hpp"
 #include "timeit.hpp"
 #include <iostream>
@@ -11,20 +11,19 @@
 using namespace std;
 volatile int check = 0;
 
-template<typename KPRF>
+template<typename PRF>
 void doit(string name){
-    array<uint64_t, KPRF::key_N> k = {99};
-    array<uint64_t, KPRF::in_N> c = {};
-    KPRF prf{k};
+    array<uint64_t, PRF::in_N> c = {99};
     auto perf = detail::timeit(std::chrono::seconds(5),
                                 [&](){
-                                    c = prf(c);
+                                    auto r = PRF{}(c);
+                                    ranges::copy(r, begin(c));
                                 });
     cout << "calling " << name << " directly: " << (c[0]==0?" (zero?!) ":"");
     cout << perf.iter_per_sec()/1e6 << "Miters/sec\n";
-    cout << "approx " << perf.sec_per_iter() *  3.e9 / sizeof(c) <<  " cycles per byte\n";
+    cout << "approx " << perf.sec_per_iter() *  3.e9 / sizeof(typename PRF::result_type) <<  " cycles per byte\n";
 
-    counter_based_engine<KPRF> engine;
+    counter_based_engine<PRF> engine;
     uint64_t r;
     perf = detail::timeit(chrono::seconds(5),
                            [&](){
@@ -35,10 +34,10 @@ void doit(string name){
     cout << "approx " << perf.sec_per_iter() *  3.e9 / sizeof(r) <<  " cycles per byte\n";
 }
 
-#define MAPPED(kprf) {string(#kprf), function<void(string)>(&doit<kprf>)}
+#define MAPPED(prf) {string(#prf), function<void(string)>(&doit<prf>)}
 map<string, function<void(string)>> dispatch_map = {
-    MAPPED(threefry4x64_kprf<>),
-    MAPPED(philox4x64_kprf<>),
+    MAPPED(threefry4x64_prf<>),
+    MAPPED(philox4x64_prf<>),
 };
     
 
