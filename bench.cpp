@@ -1,5 +1,6 @@
 #include "threefry_prf.hpp"
 #include "philox_prf.hpp"
+#include "siphash_prf.hpp"
 #include "counter_based_engine.hpp"
 #include "timeit.hpp"
 #include <iostream>
@@ -14,7 +15,7 @@ volatile int check = 0;
 template<typename PRF>
 void doit(string name){
     array<uint64_t, PRF::in_N> c = {99};
-    auto perf = detail::timeit(std::chrono::seconds(5),
+    auto perf = timeit(std::chrono::seconds(5),
                                 [&](){
                                     auto r = PRF{}(c);
                                     ranges::copy(r, begin(c));
@@ -25,7 +26,7 @@ void doit(string name){
 
     counter_based_engine<PRF> engine;
     uint64_t r;
-    perf = detail::timeit(chrono::seconds(5),
+    perf = timeit(chrono::seconds(5),
                            [&](){
                                r = engine();
                            });
@@ -35,9 +36,11 @@ void doit(string name){
 }
 
 #define MAPPED(prf) {string(#prf), function<void(string)>(&doit<prf>)}
+#define _ ,
 map<string, function<void(string)>> dispatch_map = {
     MAPPED(threefry4x64_prf<>),
     MAPPED(philox4x64_prf<>),
+    MAPPED(siphash_prf<32 _ 4>),
 };
     
 

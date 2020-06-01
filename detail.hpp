@@ -10,8 +10,8 @@
 #pragma once
 #include <concepts>
 #include <iterator>
-using namespace std;
 
+namespace std{
 namespace detail{
 
 template <typename X>
@@ -59,4 +59,4 @@ requires (w <= std::numeric_limits<U>::digits)
 constexpr U fffmask = w ? (U(~(U(0))) >> (std::numeric_limits<U>::digits - w)) : 0;
 
 } // namespace detail
-
+} // namespace std

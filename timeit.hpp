@@ -30,7 +30,6 @@
 #include <chrono>
 #include <thread>
 
-namespace detail{
 using clk_t = std::chrono::high_resolution_clock;
 
 struct timeit_result{
@@ -74,4 +73,3 @@ timeit(const std::chrono::duration<Rep, Period>& dur, Functor f){
     t.join();
     return {n, elapsed};
 }
-} // namespace detail

@@ -2,13 +2,18 @@
 #
 # use -std=gnu++20 so numeric_limits<__uint128_t> "works"
 CXXFLAGS+=-std=gnu++2a -Wall
-CXXFLAGS+=-O3
-#CXXFLAGS+=-O0 -ggdb
+CFLAGS+=-Wall
+OPT=-O3
+#OPT=-O0 -ggdb
+CXXFLAGS+=$(OPT)
+CFLAGS+=$(OPT)
 TARGET_ARCH+=-pthread # for philoxbench
 
 all: philoxexample tests bench
 
 threefry.o : CPPFLAGS+=-I/u/nyc/salmonj/g/gardenfs/core123/include
+
+bench : siphash.o
 
 LINK.o = $(CXX) $(LDFLAGS) $(TARGET_ARCH)
 
@@ -31,6 +36,7 @@ COMPILE.cpp = $(CXX) $(DEPFLAGS) $(CXXFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c
 
 $(DEPDIR): ; @mkdir -p $@
 
+CSRCS:=$(wildcard *.c)
 CPPSRCS:=$(wildcard *.cpp)
 DEPFILES := $(CSRCS:%.c=$(DEPDIR)/%.d) $(CPPSRCS:%.cpp=$(DEPDIR)/%.d)
 $(DEPFILES):
