@@ -12,14 +12,14 @@ namespace std{
 template<typename PRF>
 class counter_based_engine{
 public:
+    static constexpr size_t seed_bits = PRF::in_bits;
+private:
     using in_value_type = PRF::in_value_type;
     using result_value_type = PRF::result_value_type;
-    static constexpr size_t seed_bits = PRF::in_bits;
     static constexpr size_t result_bits = PRF::result_bits;
     static constexpr size_t seed_N = PRF::in_N - 1;
     static constexpr size_t result_N = PRF::result_N;
 
-private:
     static constexpr size_t in_N = PRF::in_N;
     static constexpr size_t in_bits = PRF::in_bits;
     static_assert(numeric_limits<result_value_type>::max() >= result_N);
@@ -163,7 +163,16 @@ public:
     // - the type of the underlying PRF and a reference to it.
     using prf_type = PRF;
 
-    // Constructor from an 'seed-range'
+    // Constructors and seed members from from a 'seed-range'
+    template <integral T>
+    explicit counter_based_engine(initializer_list<T> il){
+        seed(il);
+    }
+    template <integral T>
+    void seed(initializer_list<T> il){
+        seed(ranges::subrange(il));
+    }
+    
     template <detail::integral_input_range InRange>
     explicit counter_based_engine(InRange iv){
         seed(iv);
@@ -177,15 +186,6 @@ public:
             in[i] = (inp == ine) ? 0 : (*inp++) & in_mask; // ?? throw if *inp > in_mask??
         in.back() = 0;
         ridxref() = 0;
-    }
-    
-    template <integral T>
-    explicit counter_based_engine(initializer_list<T> il){
-        seed(il);
-    }
-    template <integral T>
-    void seed(initializer_list<T> il){
-        seed(ranges::subrange(il));
     }
     
 

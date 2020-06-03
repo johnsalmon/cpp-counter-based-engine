@@ -30,6 +30,10 @@
 #include <chrono>
 #include <thread>
 
+// N.b. use the high_resolution_clock, even though it might not be
+// 'steady'.  Timeit is typically used for short timing runs
+// O(seconds), and we're more interested in high accuracy than we are
+// worried about the clock's steadiness.
 using clk_t = std::chrono::high_resolution_clock;
 
 struct timeit_result{
@@ -53,10 +57,6 @@ timeit(const std::chrono::duration<Rep, Period>& dur, Functor f){
         });
     
     long long n = 0;
-    // N.b. use the high_resolution_clock, even though it might not be
-    // 'steady'.  Timeit is typically used for short timing runs
-    // O(seconds), and we're more interested in high accuracy than we
-    // are worried about the clock's steadiness.
     auto start = clk_t::now();
     do{
         // Unrolling this produced very confusing results.  Any f()

@@ -100,7 +100,7 @@ int main(int argc, char **argv){
 
     bool threw;
     cout << "It takes a couple of minutes to exhaust a 32-bit counter on a 3GHz machine.  Be patient..." << endl;
-    auto Navail = uint64_t(eng_t::result_N)<<eng_t::seed_bits;
+    auto Navail = uint64_t(tuple_size<eng_t::prf_type::result_type>::value)<<eng_t::seed_bits;
     for(int loop : {1, 2}){
         for(uint64_t i=0; i<Navail; ++i)
             eng3();
