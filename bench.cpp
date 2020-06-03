@@ -8,31 +8,36 @@
 #include <ranges>
 #include <map>
 #include <functional>
+#include <algorithm>
 
 using namespace std;
 volatile int check = 0;
 
+float ticks_per_sec = 3.e9;
+
 template<typename PRF>
 void doit(string name){
     array<uint64_t, PRF::in_N> c = {99};
+    using result_value_type = PRF::result_type::value_type;
+    result_value_type r;
     auto perf = timeit(std::chrono::seconds(5),
-                                [&](){
-                                    auto r = PRF{}(c);
-                                    ranges::copy(r, begin(c));
-                                });
-    cout << "calling " << name << " directly: " << (c[0]==0?" (zero?!) ":"");
+                       [&r, &c](){
+                           auto rv = PRF{}(c);
+                           c.back()++;
+                           r = accumulate(begin(rv), end(rv), r, bit_xor<result_value_type>{});
+                       });
+    cout << "calling " << name << " directly: " << (r==0?" (zero?!) ":"");
     cout << perf.iter_per_sec()/1e6 << "Miters/sec\n";
-    cout << "approx " << perf.sec_per_iter() *  3.e9 / sizeof(typename PRF::result_type) <<  " cycles per byte\n";
+    cout << "approx " << perf.sec_per_iter() *  ticks_per_sec / sizeof(typename PRF::result_type) <<  " cycles per byte\n";
 
     counter_based_engine<PRF> engine;
-    uint64_t r;
     perf = timeit(chrono::seconds(5),
                            [&](){
                                r = engine();
                            });
     cout << "calling " << name << " through engine: " << (r==0?" (zero?!) ":"");
     cout << perf.iter_per_sec()/1e6 << "Miters/sec\n";
-    cout << "approx " << perf.sec_per_iter() *  3.e9 / sizeof(r) <<  " cycles per byte\n";
+    cout << "approx " << perf.sec_per_iter() *  ticks_per_sec / sizeof(r) <<  " cycles per byte\n";
 }
 
 #define MAPPED(prf) {string(#prf), function<void(string)>(&doit<prf>)}
@@ -45,6 +50,8 @@ map<string, function<void(string)>> dispatch_map = {
     
 
 int main(int argc, char**argv){
+    cout << "CPB results assume a 3GHz clock!\n";
+    ticks_per_sec = 3.e9;
     if(argc == 1){
         for(auto& p : dispatch_map)
             p.second(p.first);
