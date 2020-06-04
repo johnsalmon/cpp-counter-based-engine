@@ -47,8 +47,9 @@ public:
 
     // Ignore endian issues!  This code will produce different
     // results on machines with different endian.  
+    // FIXME - is this the right signature?  InRange&& is a forwarding reference.
     template <std::detail::integral_input_range InRange>
-    result_type operator()(InRange in) const {
+    result_type operator()(InRange&& in) const {
         const size_t bytes_per_in = (in_bits/8);
         const size_t inlen = std::ranges::size(in) * bytes_per_in;
         uint8_t inbytes[inlen];

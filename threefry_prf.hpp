@@ -79,8 +79,9 @@ public:
         return operator()(ranges::subrange(il));
     }
 
+    // FIXME - is this the right signature?  InRange&& is a forwarding reference.
     template <detail::integral_input_range InRange>
-    result_type operator()(InRange in) const{
+    result_type operator()(InRange&& in) const{
         auto cp = ranges::begin(in);
         auto ce = ranges::end(in);
         Uint k[n+1];

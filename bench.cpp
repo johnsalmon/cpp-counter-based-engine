@@ -33,16 +33,36 @@ void doit(string name){
     counter_based_engine<PRF> engine;
     perf = timeit(chrono::seconds(5),
                            [&](){
-                               r = engine();
+                               r ^= engine();
                            });
     cout << "calling " << name << " through engine: " << (r==0?" (zero?!) ":"");
     cout << perf.iter_per_sec()/1e6 << "Miters/sec\n";
     cout << "approx " << perf.sec_per_iter() *  ticks_per_sec / sizeof(r) <<  " cycles per byte\n";
 }
 
+// a minimal prf that copies inputs to outputs - useful for estimating
+// function call and related overheads
+class null_prf{
+public:
+    static constexpr size_t in_bits=64;
+    static constexpr size_t in_N = 4;
+    static constexpr size_t result_bits=64;
+    static constexpr size_t result_N = 4;
+    using result_value_type = uint64_t;
+    using in_value_type = uint64_t;
+    using result_type = array<result_value_type, result_N>;
+    template <detail::integral_input_range InRange>
+    result_type operator()(InRange&& in) const{
+        result_type ret;
+        copy_n(begin(in), 4, begin(ret));
+        return ret;
+    }
+};        
+
 #define MAPPED(prf) {string(#prf), function<void(string)>(&doit<prf>)}
 #define _ ,
 map<string, function<void(string)>> dispatch_map = {
+    MAPPED(null_prf),
     MAPPED(threefry4x64_prf<>),
     MAPPED(philox4x64_prf<>),
     MAPPED(siphash_prf<32 _ 4>),
