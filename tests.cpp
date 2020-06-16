@@ -1,3 +1,4 @@
+#include <iostream>
 #include "counter_based_engine.hpp"
 #include "philox_prf.hpp"
 #include "threefry_prf.hpp"
@@ -7,8 +8,10 @@
 
 // Save some typing:
 using namespace std;
-using eng_t = philox4x64;
-using prf_t = eng_t::prf_type; // i.e., philox4x64_kprf;
+// N.B.  threefry has simd code inside it, so should be strictly more bug-prone
+// than philox.
+using eng_t = threefry4x64;
+using prf_t = eng_t::prf_type;
 
 // make it easy to print results:
 template <typename T, size_t N>
@@ -24,18 +27,27 @@ void dokat(const std::string& s){
     iss >> hex;
     using ranges::subrange;
 
-    std::array<typename PRF::in_value_type, PRF::in_N> iv;
-    for(size_t i=key_N; i<PRF::in_N; ++i)
+    using in_type = PRF::in_type;
+    in_type iv;
+    using result_type = array<uintmax_t, PRF::result_N>;
+    result_type result;
+    for(size_t i=key_N; i<tuple_size<in_type>::value; ++i)
         iss >> iv[i];
     for(size_t i=0; i<key_N; ++i)
         iss >> iv[i];
-    typename PRF::result_type reference;
+    result_type reference;
     for(auto& r : reference)
         iss >> r;
     assert(iss);
     PRF prf;
-    auto result = prf(iv);
+    cout << hex;
+    prf(ranges::single_view(iv), begin(result));
+#if 1
     assert(result == reference);
+#else
+    cout << "result:    " << result << "\n";
+    cout << "reference: " << reference << "\n";
+#endif
     cout << "PASSED: " << s << endl;
 }
 
@@ -45,7 +57,6 @@ int main(int argc, char **argv){
     dokat<threefry2x32_prf<20>, 2>("00000000 00000000 00000000 00000000   6b200159 99ba4efe");
     dokat<threefry2x32_prf<20>, 2>("ffffffff ffffffff ffffffff ffffffff   1cb996fc bb002be7");
     dokat<threefry2x32_prf<20>, 2>("243f6a88 85a308d3 13198a2e 03707344   c4923a9c 483df7a0");
-
     dokat<threefry4x32_prf<20>, 4>("00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000   9c6ca96a e17eae66 fc10ecd4 5256a7d8");
     dokat<threefry4x32_prf<20>, 4>("ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff   2a881696 57012287 f6c7446e a16a6732");
     dokat<threefry4x32_prf<20>, 4>("243f6a88 85a308d3 13198a2e 03707344 a4093822 299f31d0 082efa98 ec4e6c89   59cd1dbb b8879579 86b5d00c ac8b6d84");
@@ -75,57 +86,31 @@ int main(int argc, char **argv){
     dokat<philox4x32_prf<10>, 2>("243f6a88 85a308d3 13198a2e 03707344 a4093822 299f31d0   d16cfe09 94fdcceb 5001e420 24126ea1");
     cout << "PASSED: known-answer-tests" << endl;
 
-    // Test discard.  It's by far the trickiest piece of counter_based_engine
+    // Test discard and bulk generation - by far the trickiest corners
+    // of the counter_based_engine implementation...
+    eng_t jumpeng;
+    // The cauchy distribution has a *very* fat tail (it has infinite variance!).
+    // It's a good choice if we want to see some occasional very large jumps.
+    cauchy_distribution<float> cd(0., 10.);
     eng_t eng1;
     eng_t eng2;
-    for(size_t i=0; i<1000000; ++i){
-        auto jump = eng1() % 12; eng2();
-        //cout << "\nBefore eng1: " << eng1 << "\n";
-        for(size_t j=0; j<jump; ++j)
-            eng1();
-        eng2.discard(jump);
-        //cout << "jump: " << jump << "\n";
-        //cout << "After eng1: " << eng1 << "\n";
-        //cout << "After eng2: " << eng2 << "\n";
-        assert(eng1 == eng2);
-    }
-    cout << "PASSED: discard" << endl;
-
-    // FIXME - test out_of_range behavior.  (This was
-    // much easeir when we could set  CTR_BITS=small and
-    // easily exhaust a generator.  Running through 2^34
-    // values at 200M/sec will take about a minute...
-    using eng_t = counter_based_engine<philox4x32_prf<>>;
     eng_t eng3;
-
-    bool threw;
-    cout << "It takes a couple of minutes to exhaust a 32-bit counter on a 3GHz machine.  Be patient..." << endl;
-    auto Navail = uint64_t(tuple_size<eng_t::prf_type::result_type>::value)<<eng_t::seed_bits;
-    for(int loop : {1, 2}){
-        for(uint64_t i=0; i<Navail; ++i)
-            eng3();
-        // The next call should throw
-        threw = false;
-        try{
-            eng3();
-        }catch(out_of_range&){
-            threw = true;
+    const size_t max_jump = 10000;
+    vector<eng_t::result_type> bulk(max_jump);
+    for(size_t i=0; i<1000000; ++i){
+        size_t jump = min(max_jump, size_t(abs(cd(jumpeng))));
+        
+        eng1(&bulk[0], &bulk[jump]);
+        for(size_t j=0; j<jump; ++j){
+            auto r = eng2();
+            assert(r == bulk[j]);
         }
-        assert(threw);
-
-        // Let's try that again.  Should continue to throw
-        threw = false;
-        try{
-            eng3();
-        }catch(out_of_range&){
-            threw = true;
-        }
-        assert(threw);
-        // Let's reseed.  Shouldn't throw...
-        cout << "PASSED:  out_of_range test " << loop << endl;
-        eng3.seed();
+        eng3.discard(jump);
+        assert(eng1 == eng2);
+        assert(eng1 == eng3);
+        assert(eng2 == eng3);
     }
+    cout << "PASSED: discard/bulk tests" << endl;
 
-    
     return 0;
 }

@@ -11,7 +11,8 @@ using eng_t = philox4x64;
 using prf_t = eng_t::prf_type; // i.e., philox4x64_prf;
 
 // make it easy to print results:
-std::ostream& operator<<(std::ostream& os, prf_t::result_type& result){
+template<typename T, size_t N>
+std::ostream& operator<<(std::ostream& os, array<T, N>& result){
     for(auto& r : result)
         os << r << " ";
     return os;
@@ -52,18 +53,28 @@ int main(int argc, char **argv){
     prf_t prf1;
     cout << "Call it directly  on {0, 0, 0, 0, 0, i}:\n";
     array<uint64_t, 6> in{};  // in full generality, array<prf_t::in_value_type, prf_t::in_N>
+    array<uint64_t, 4> result;
     for(unsigned i=0; i<10; ++i){
-        auto result = prf1(in);
+        prf1(ranges::single_view(in), begin(result));
         in[5]++;
         cout << i << ": " << result << "\n";
     }
 
     
-    // Check that the example in proposal.txt actually works...
+    // Check that the examples in README.md actually work...
     {
         using prf_t = philox4x64_prf<>;
-        prf_t::in_value_type a = 1, b = 2, c = 3, d=4;
-        auto eng = counter_based_engine<prf_t>({a, b, c, d}); // 2^256 distinct engines
+        static const size_t Nin  = 3;
+        prf_t::in_type in[Nin] = {{1,2,3,4,5,6}, {7,8, 9,10,11,12}, {13,14,15,16,17,18}};
+        uint64_t out[Nin*prf_t::result_N]; // 12 values
+        prf_t{}(in, begin(out));
+        cout << "Random values obtained directly from philox4x64_prf: ";
+        for(const auto o : out)
+            cout << o << " ";
+        cout << "\n";
+
+        uint64_t a = 1, b = 2, c = 3, d=4, e=5;
+        auto eng = counter_based_engine<uint64_t, prf_t, 1>({a, b, c, d, e}); // 2^320 distinct engines, each with period 2^66
         eng(); eng();
     }
 
@@ -85,7 +96,7 @@ int main(int argc, char **argv){
             // keyed_prf generator allows the overall algorithm
             // freedom that is not available when using a conventional
             // Random Number Generator.
-            counter_based_engine<philox4x32_prf<>> eng{{global_seed, timestep, atomid}};
+            counter_based_engine<uint32_t, philox4x32_prf<>, 1> eng{{global_seed, timestep, atomid}};
             normal_distribution nd;
             auto n1 = nd(eng);
             auto n2 = nd(eng);

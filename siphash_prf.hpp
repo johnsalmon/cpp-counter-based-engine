@@ -24,42 +24,40 @@ int siphash(const uint8_t *in, const size_t inlen, const uint8_t *k,
             uint8_t *out, const size_t outlen);
 }
 
-template <size_t w, size_t n>
+template <size_t n>
 class siphash_prf{
-public:
-    static constexpr size_t in_bits = w;
     static constexpr size_t in_N = n;
+    static_assert(in_N > 2);
+public:
+    // The API in siphash.c is expressed in terms of uint8_t.  But
+    // the algorithm is "really" expressed in terms of 64-bit
+    // arithmetic.  So let's expose that.  The number of 64-bit
+    // inputs is a template parameter.
+    static constexpr size_t in_bits = 64;
+    using in_type = std::array<uint64_t, in_N>;
     static constexpr size_t result_bits = 64;
     static constexpr size_t result_N = 2;
     // Note that siphash.c assumes the existence of uint8_t and uint64_t
     // types, so there's no need jump through the hoops that would be
     // required if we tried to use uint_least8_t and uint_least64_t
     // instead.
-    using result_value_type = uint64_t;
-    using result_type = std::array<result_value_type, result_N>;
     
-    using in_value_type = std::detail::uint_least<w>;
-
-    template <std::integral T>
-    result_type operator()(std::initializer_list<T> il) const {
-        return operator()(std::ranges::subrange(il));
-    }
-
     // Ignore endian issues!  This code will produce different
     // results on machines with different endian.  
-    // FIXME - is this the right signature?  InRange&& is a forwarding reference.
-    template <std::detail::integral_input_range InRange>
-    result_type operator()(InRange&& in) const {
-        const size_t bytes_per_in = (in_bits/8);
-        const size_t inlen = std::ranges::size(in) * bytes_per_in;
-        uint8_t inbytes[inlen];
-        uint8_t *dest = &inbytes[0];
-        for(auto v : in){
-            ::memcpy(dest, &v, bytes_per_in);
-            dest += bytes_per_in;
+    template <std::ranges::input_range InputRangeOfInTypes, std::weakly_incrementable O>
+    requires std::ranges::sized_range<InputRangeOfInTypes> &&
+             std::is_same_v<std::iter_value_t<std::ranges::iterator_t<InputRangeOfInTypes>>, in_type> &&
+             std::integral<std::iter_value_t<O>> &&
+             std::indirectly_writable<O, std::iter_value_t<O>>
+    O operator()(InputRangeOfInTypes&& inrange, O result) const{
+        for(const auto& in : inrange){
+            uint64_t out[2];
+            // Call siphash with the first 16 bytes (in[0] and in[1]) 
+            // as the key and the rest (in[2], ... ) as the message.
+            siphash(16+(uint8_t*)&in[0], sizeof(in)-16, (uint8_t*)&in[0], (uint8_t*)&out[0], sizeof(out));
+            *result++ = out[0];
+            *result++ = out[1];
         }
-        result_type out;
-        siphash(&inbytes[16], inlen-16, &inbytes[0], (uint8_t*)&out[0], sizeof(out));
-        return out;
+        return result;
     }
 };

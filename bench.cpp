@@ -4,6 +4,7 @@
 #include "counter_based_engine.hpp"
 #include "timeit.hpp"
 #include <iostream>
+#include <iomanip>
 #include <chrono>
 #include <ranges>
 #include <map>
@@ -13,31 +14,78 @@
 using namespace std;
 volatile int check = 0;
 
-float ticks_per_sec = 3.e9;
+template <typename T, size_t N>
+std::ostream& operator<<(std::ostream& os, const array<T, N>& a){
+    for(const auto& v : a)
+        os << v << " ";
+    return os;
+}
 
 template<typename PRF>
 void doit(string name){
-    array<uint64_t, PRF::in_N> c = {99};
-    using result_value_type = PRF::result_type::value_type;
-    result_value_type r;
-    auto perf = timeit(std::chrono::seconds(5),
-                       [&r, &c](){
-                           auto rv = PRF{}(c);
-                           c.back()++;
-                           r = accumulate(begin(rv), end(rv), r, bit_xor<result_value_type>{});
-                       });
-    cout << "calling " << name << " directly: " << (r==0?" (zero?!) ":"");
-    cout << perf.iter_per_sec()/1e6 << "Miters/sec\n";
-    cout << "approx " << perf.sec_per_iter() *  ticks_per_sec / sizeof(typename PRF::result_type) <<  " cycles per byte\n";
+    using prf_in_type = typename PRF::in_type;
+    prf_in_type c = {99};
+    static constexpr size_t prf_result_N = PRF::result_N;
+    using prf_value_type = detail::uint_least<PRF::result_bits>;
+    using prf_result_type = array<prf_value_type, prf_result_N> ;
+    using engine_result_type = prf_value_type;
+    static constexpr size_t engine_result_bits = PRF::result_bits;
+    timeit_result perf;
+    counter_based_engine<engine_result_type, PRF, 64/PRF::in_bits> engine;
+    engine_result_type r = 0;
+    static const size_t bulkN = 1024;
+    static const size_t bits_per_byte = 8;
+    float Gbytes_per_iter = 0.;
 
-    counter_based_engine<PRF> engine;
+    // single (result_N) generation with prf
+    perf = timeit(std::chrono::seconds(5),
+                       [&r, &c](){
+                           prf_result_type rv;
+                           PRF{}(ranges::single_view(c), begin(rv));
+                           c.back()++;
+                           r = accumulate(begin(rv), end(rv), r, bit_xor<decltype(r)>{});
+                       });
+    cout << "calling " << name << " directly (" << prf_result_N << " at a time): " << (r==0?" (zero?!) ":"");
+    cout << perf.iter_per_sec()/1e6 << " Miters/sec";
+    Gbytes_per_iter = 1.e-9 * (PRF::result_bits*prf_result_N)/bits_per_byte;
+    cout << " approx " << perf.iter_per_sec() *  Gbytes_per_iter <<  " GB/s\n";
+
+    // bulk generation directly with prf
+    array<typename PRF::in_type, bulkN/prf_result_N> bulkin;
+    for(auto& a : bulkin)
+        a = prf_in_type{};
+    perf = timeit(std::chrono::seconds(5),
+                       [&r, &bulkin](){
+                           array<engine_result_type, bulkN> bulk;
+                           PRF{}(bulkin, begin(bulk));
+                           for(auto& a : bulkin)
+                               a.back()++;
+                           r = accumulate(begin(bulk), end(bulk), r, bit_xor<decltype(r)>{});
+                       });
+    cout << "calling " << name << " directly (" << bulkN << " at a time): " << (r==0?" (zero?!) ":"");
+    cout << perf.iter_per_sec()/1e6 << " Miters/sec";
+    Gbytes_per_iter = 1.e-9*(bulkN*PRF::result_bits)/bits_per_byte;
+    cout << " approx " << perf.iter_per_sec() *  Gbytes_per_iter <<  " GB/s\n";
+
     perf = timeit(chrono::seconds(5),
                            [&](){
                                r ^= engine();
                            });
-    cout << "calling " << name << " through engine: " << (r==0?" (zero?!) ":"");
-    cout << perf.iter_per_sec()/1e6 << "Miters/sec\n";
-    cout << "approx " << perf.sec_per_iter() *  ticks_per_sec / sizeof(r) <<  " cycles per byte\n";
+    cout << "calling " << name << " through engine (1 at a time): " << (r==0?" (zero?!) ":"");
+    cout << perf.iter_per_sec()/1e6 << " Miters/sec";
+    Gbytes_per_iter = 1.e-9 * engine_result_bits/bits_per_byte;
+    cout << " approx " << perf.iter_per_sec() * Gbytes_per_iter <<  " GB/s\n";
+
+    perf = timeit(chrono::seconds(5),
+                           [&](){
+                               array<engine_result_type, bulkN> bulk;
+                               engine(begin(bulk), end(bulk));
+                               r = accumulate(begin(bulk), end(bulk), r, bit_xor<engine_result_type>{});
+                           });
+    cout << "calling " << name << " through engine (" << bulkN << " at a  time): " << (r==0?" (zero?!) ":"");
+    cout << perf.iter_per_sec()/1e6 << " Miters/sec";
+    Gbytes_per_iter = 1.e-9 * bulkN*engine_result_bits/bits_per_byte;
+    cout << " approx " << perf.iter_per_sec() * Gbytes_per_iter <<  " GB/s\n";
 }
 
 // a minimal prf that copies inputs to outputs - useful for estimating
@@ -51,27 +99,31 @@ public:
     using result_value_type = uint64_t;
     using in_value_type = uint64_t;
     using result_type = array<result_value_type, result_N>;
-    template <detail::integral_input_range InRange>
-    result_type operator()(InRange&& in) const{
-        result_type ret;
-        copy_n(begin(in), 4, begin(ret));
-        return ret;
+    template <detail::integral_input_range InRange, weakly_incrementable O>
+    void operator()(InRange&& in, O result) const{
+        ranges::copy(in, result);
     }
 };        
 
 #define MAPPED(prf) {string(#prf), function<void(string)>(&doit<prf>)}
 #define _ ,
 map<string, function<void(string)>> dispatch_map = {
-    MAPPED(null_prf),
+                                                    //    MAPPED(uint64_t, null_prf),
     MAPPED(threefry4x64_prf<>),
+    MAPPED(threefry2x64_prf<>),
+    MAPPED(threefry4x32_prf<>),
+    MAPPED(threefry2x32_prf<>),
     MAPPED(philox4x64_prf<>),
-    MAPPED(siphash_prf<32 _ 4>),
+    MAPPED(philox2x64_prf<>),
+    MAPPED(philox4x32_prf<>),
+    MAPPED(philox2x32_prf<>),
+    MAPPED(siphash_prf<4>),
+    MAPPED(siphash_prf<16>),
 };
     
 
 int main(int argc, char**argv){
-    cout << "CPB results assume a 3GHz clock!\n";
-    ticks_per_sec = 3.e9;
+    cout << setprecision(2);
     if(argc == 1){
         for(auto& p : dispatch_map)
             p.second(p.first);
