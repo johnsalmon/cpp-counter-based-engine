@@ -31,9 +31,7 @@ void dokat(const std::string& s){
     in_type iv;
     using result_type = array<uintmax_t, PRF::result_N>;
     result_type result;
-    for(size_t i=key_N; i<tuple_size<in_type>::value; ++i)
-        iss >> iv[i];
-    for(size_t i=0; i<key_N; ++i)
+    for(size_t i=0; i<tuple_size<in_type>::value; ++i)
         iss >> iv[i];
     result_type reference;
     for(auto& r : reference)
@@ -53,7 +51,7 @@ void dokat(const std::string& s){
 
 int main(int argc, char **argv){
     // Known-answer tests from the original Random123 distribution.
-    // The format is:  in[0 .. in_N] key[0 .. key_N] result[0 .. result_N]
+    // The format is:  in[0 .. in_N] result[0 .. result_N]
     dokat<threefry2x32_prf<20>, 2>("00000000 00000000 00000000 00000000   6b200159 99ba4efe");
     dokat<threefry2x32_prf<20>, 2>("ffffffff ffffffff ffffffff ffffffff   1cb996fc bb002be7");
     dokat<threefry2x32_prf<20>, 2>("243f6a88 85a308d3 13198a2e 03707344   c4923a9c 483df7a0");

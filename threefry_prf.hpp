@@ -179,10 +179,10 @@ public:
 
                 for(unsigned s=0; s<simd_N; ++s){
                     const in_type& next = *cp++;
-                    k0[s] = next[0];
-                    k1[s] = next[1];
-                    c0[s] = next[2];
-                    c1[s] = next[3];
+                    c0[s] = next[0];
+                    c1[s] = next[1];
+                    k0[s] = next[2];
+                    k1[s] = next[3];
                 }
                 do2(c0, c1, k0, k1);
                 // If we were allowed to permute the outputs and if
@@ -205,16 +205,18 @@ public:
                 in_value_type c3 __attribute__((vector_size(simd_size)));
                 for(unsigned s=0; s<simd_N; ++s){
                     const in_type& next = *cp++;
-                    k0[s] = next[0];
-                    k1[s] = next[1];
-                    k2[s] = next[2];
-                    k3[s] = next[3];
-                    c0[s] = next[4];
-                    c1[s] = next[5];
-                    c2[s] = next[6];
-                    c3[s] = next[7];
+                    c0[s] = next[0];
+                    c1[s] = next[1];
+                    c2[s] = next[2];
+                    c3[s] = next[3];
+                    k0[s] = next[4];
+                    k1[s] = next[5];
+                    k2[s] = next[6];
+                    k3[s] = next[7];
                 }
                 do4(c0, c1, c2, c3, k0, k1, k2, k3);
+                // Question:  is there anything to be gained by
+                // avoiding this "transpose"?
                 for(unsigned s=0; s<simd_N; ++s){
                     *result++ = c0[s];
                     *result++ = c1[s];
@@ -228,15 +230,13 @@ public:
         while(nleft--){
             const in_type& next = *cp++;
             if constexpr (n == 2){
-                auto [k0, k1, c0, c1] = next; // all are in_value_type
+                auto [c0, c1, k0, k1] = next; // all are in_value_type
                 do2(c0, c1, k0, k1);
                 *result++ = c0;
                 *result++ = c1;
             }else if constexpr (n == 4){
-                auto [k0, k1, k2, k3, c0, c1, c2, c3] = next; // all are in_value_type
+                auto [c0, c1, c2, c3, k0, k1, k2, k3] = next; // all are in_value_type
                 do4(c0, c1, c2, c3, k0, k1, k2, k3);
-                // Question:  is there anything to be gained by
-                // avoiding this "transpose"?
                 *result++ = c0;
                 *result++ = c1;
                 *result++ = c2;

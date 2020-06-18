@@ -28,9 +28,9 @@ public:
         static_assert(is_integral_v<typename ranges::range_value_t<InRange>::value_type>);
         for(const auto& in : inrange){
             if constexpr (n == 2){
-                in_value_type K0 = in[0] & inmask;
-                in_value_type R0 = in[1] & inmask;
-                in_value_type L0 = in[2] & inmask;
+                in_value_type R0 = in[0] & inmask;
+                in_value_type L0 = in[1] & inmask;
+                in_value_type K0 = in[2] & inmask;
                 for(size_t i=0; i<r; ++i){
                     auto [hi, lo] = detail::mulhilo<w>(R0, MC[0]);
                     R0 = hi^K0^L0;
@@ -40,12 +40,12 @@ public:
                 *result++ = R0;
                 *result++ = L0;
             }else if constexpr (n == 4) {
-                in_value_type K0 = in[0] & inmask;
-                in_value_type K1 = in[1] & inmask;
-                in_value_type R0 = in[2] & inmask;
-                in_value_type L0 = in[3] & inmask;
-                in_value_type R1 = in[4] & inmask;
-                in_value_type L1 = in[5] & inmask;
+                in_value_type R0 = in[0] & inmask;
+                in_value_type L0 = in[1] & inmask;
+                in_value_type R1 = in[2] & inmask;
+                in_value_type L1 = in[3] & inmask;
+                in_value_type K0 = in[4] & inmask;
+                in_value_type K1 = in[5] & inmask;
                 for(size_t i=0; i<r; ++i){
                     auto [hi0, lo0] = detail::mulhilo<w>(R0, MC[0]);
                     auto [hi1, lo1] = detail::mulhilo<w>(R1, MC[2]);

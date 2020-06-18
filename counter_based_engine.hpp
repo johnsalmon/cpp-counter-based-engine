@@ -38,7 +38,7 @@ private:
 
     static constexpr auto in_mask = detail::fffmask<in_value_type, PRF::in_bits>;
     static constexpr auto result_mask = detail::fffmask<ResultType,
-                                                        std::min(numeric_limits<ResultType>::digits, result_bits)>;
+                                                        std::min<size_t>(numeric_limits<ResultType>::digits, result_bits)>;
 
     in_type in;
     prf_result_type results;
