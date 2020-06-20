@@ -6,6 +6,20 @@
 #include <bit>
 #include <ranges>
 
+// If the "parallel" API allows the results to be returned permuted,
+// we can write entire simd vectors to the output range.  This *might*
+// allow for some additional optimization (but in practice, with gcc10
+// on x86_64 with AVX-512, it seems not to make any difference)
+#ifndef PRF_ALLOW_PERMUTED_RESULTS
+#define PRF_ALLOW_PERMUTED_RESULTS 1
+#endif
+
+// Set SIMD_SIZE_BYTES to 0 to completely turn off SIMD.
+#ifndef PRF_SIMD_SIZE_BYTES
+// N.B. 32 bytes <-> AVX2, 64 bytes <-> AVX512
+#define PRF_SIMD_SIZE_BYTES 64
+#endif
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpsabi"
 
@@ -164,8 +178,8 @@ public:
         auto nin = ranges::size(in);
         auto nleft = nin;
         // N.B.  simd_size=64 gives some spurious warnings about 64-byte alignment
-#if 1 // is this actually a performance win??
-        static constexpr int simd_size = 64; // 32 bytes <-> AVX2, 64 bytes <-> AVX512
+#if PRF_SIMD_SIZE_BYTES
+        static constexpr int simd_size = SIMD_SIZE_BYTES;
         static constexpr size_t simd_N = simd_size/sizeof(in_value_type);
         while(nleft>simd_N){
             // N.B. some slots may be uninitialized, but we never use
@@ -190,10 +204,15 @@ public:
                 // avoid this "transpose" and copy the simd vectors
                 // directly into *result.  Would that actually speed
                 // things up?
+#if PRF_ALLOW_PERMUTED_RESULTS
+                for(unsigned s=0; s<simd_N; ++s) *result++ = c0[s];
+                for(unsigned s=0; s<simd_N; ++s) *result++ = c1[s];
+#else                
                 for(unsigned s=0; s<simd_N; ++s){
                     *result++ = c0[s];
                     *result++ = c1[s];
                 }
+#endif // PRF_ALLOW_PERMUTED_RESULTS
             }else if constexpr (n == 4){
                 in_value_type k0 __attribute__((vector_size(simd_size)));
                 in_value_type k1 __attribute__((vector_size(simd_size)));
@@ -215,17 +234,26 @@ public:
                     k3[s] = next[7];
                 }
                 do4(c0, c1, c2, c3, k0, k1, k2, k3);
-                // Question:  is there anything to be gained by
-                // avoiding this "transpose"?
+#if PRF_ALLOW_PERMUTED_RESULTS
+                // write results in a permuted order, one entire simd-vector at a time.
+                // Conceivably, the compiler might generate SIMD store instructions here,
+                // which might improve performance.
+                for(unsigned s=0; s<simd_N; ++s) *result++ = c0[s];
+                for(unsigned s=0; s<simd_N; ++s) *result++ = c1[s];
+                for(unsigned s=0; s<simd_N; ++s) *result++ = c2[s];
+                for(unsigned s=0; s<simd_N; ++s) *result++ = c3[s];
+#else
+                // write results in exactly the same order as the inputs.
                 for(unsigned s=0; s<simd_N; ++s){
                     *result++ = c0[s];
                     *result++ = c1[s];
                     *result++ = c2[s];
                     *result++ = c3[s];
                 }
+#endif // PRF_ALLOW_PERMUTED_RESULTS
             }
         }
-#endif
+#endif // PRF_SIMD_SIZE_BYTES
 
         while(nleft--){
             const in_type& next = *cp++;

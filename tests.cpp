@@ -95,14 +95,27 @@ int main(int argc, char **argv){
     eng_t eng3;
     const size_t max_jump = 10000;
     vector<eng_t::result_type> bulk(max_jump);
+#if PRF_ALLOW_PERMUTED_RESULTS
+    vector<eng_t::result_type> bulk2(max_jump);
+#endif
     for(size_t i=0; i<1000000; ++i){
         size_t jump = min(max_jump, size_t(abs(cd(jumpeng))));
         
         eng1(&bulk[0], &bulk[jump]);
         for(size_t j=0; j<jump; ++j){
             auto r = eng2();
+#if PRF_ALLOW_PERMUTED_RESULTS
+            bulk2[j] = r;
+#else
             assert(r == bulk[j]);
+#endif
         }
+#if PRF_ALLOW_PERMUTED_RESULTS
+        sort(&bulk2[0], &bulk2[jump]);
+        sort(&bulk[0], &bulk[jump]);
+        for(size_t j=0; j<jump; ++j)
+            assert(bulk[j] == bulk2[j]);
+#endif
         eng3.discard(jump);
         assert(eng1 == eng2);
         assert(eng1 == eng3);
