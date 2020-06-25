@@ -95,6 +95,12 @@ class threefry_prf {
     
     template <unsigned r, typename Uint>
     static void round4(Uint& c0, Uint& c1, Uint& c2, Uint& c3){
+#define SIMPLIFY_PBOX 1
+#if SIMPLIFY_PBOX
+        auto c3tmp = c3;
+        c0 = (c0+c1)&inmask; c3 = rotleft(c1,rotation_constants[r%8]); c3 ^= c0;
+        c2 = (c2+c3tmp)&inmask; c1 = rotleft(c3tmp,rotation_constants[8+r%8]); c1 ^= c2;
+#else
         if((r&1)==0){
             c0 = (c0+c1)&inmask; c1 = rotleft(c1,rotation_constants[r%8]); c1 ^= c0;
             c2 = (c2+c3)&inmask; c3 = rotleft(c3,rotation_constants[8+r%8]); c3 ^= c2;
@@ -102,6 +108,7 @@ class threefry_prf {
             c0 = (c0+c3)&inmask; c3 = rotleft(c3,rotation_constants[r%8]); c3 ^= c0;
             c2 = (c2+c1)&inmask; c1 = rotleft(c1,rotation_constants[8+r%8]); c1 ^= c2;
         }
+#endif
     }
 
     template <typename Uint>
@@ -150,7 +157,15 @@ class threefry_prf {
         if(R>19) round4<19>(c0, c1, c2, c3);
         if(R>19) keymix4(c0, c1, c2, c3, k0, k1, k2, k3, 5);
 
+#if SIMPLIFY_PBOX
+        if(R&1){
+            cc0 = c0; cc1 = c3; cc2 = c2; cc3 = c1;
+        }else{
+            cc0 = c0; cc1 = c1; cc2 = c2; cc3 = c3;
+        }
+#else
         cc0 = c0; cc1 = c1; cc2 = c2; cc3 = c3;
+#endif
     }
     using in_value_type = detail::uint_fast<w>;
 public:
@@ -179,7 +194,7 @@ public:
         auto nleft = nin;
         // N.B.  simd_size=64 gives some spurious warnings about 64-byte alignment
 #if PRF_SIMD_SIZE_BYTES
-        static constexpr int simd_size = SIMD_SIZE_BYTES;
+        static constexpr int simd_size = PRF_SIMD_SIZE_BYTES;
         static constexpr size_t simd_N = simd_size/sizeof(in_value_type);
         while(nleft>simd_N){
             // N.B. some slots may be uninitialized, but we never use
