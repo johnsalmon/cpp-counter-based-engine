@@ -26,12 +26,12 @@ void doit(string name){
     using prf_in_type = typename PRF::in_type;
     prf_in_type c = {99};
     static constexpr size_t prf_result_N = PRF::result_N;
-    using prf_value_type = detail::uint_least<PRF::result_bits>;
+    using prf_value_type = PRF::result_type;
     using prf_result_type = array<prf_value_type, prf_result_N> ;
     using engine_result_type = prf_value_type;
     static constexpr size_t engine_result_bits = PRF::result_bits;
     timeit_result perf;
-    counter_based_engine<engine_result_type, PRF, 64/PRF::in_bits> engine;
+    counter_based_engine<PRF, 64/PRF::in_bits> engine;
     engine_result_type r = 0;
     static const size_t bulkN = 1024;
     static const size_t bits_per_byte = 8;

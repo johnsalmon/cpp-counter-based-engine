@@ -74,7 +74,7 @@ int main(int argc, char **argv){
         cout << "\n";
 
         uint64_t a = 1, b = 2, c = 3, d=4, e=5;
-        auto eng = counter_based_engine<uint64_t, prf_t, 1>({a, b, c, d, e}); // 2^320 distinct engines, each with period 2^66
+        auto eng = counter_based_engine<prf_t, 1>({a, b, c, d, e}); // 2^320 distinct engines, each with period 2^66
         eng(); eng();
     }
 
@@ -96,7 +96,7 @@ int main(int argc, char **argv){
             // keyed_prf generator allows the overall algorithm
             // freedom that is not available when using a conventional
             // Random Number Generator.
-            counter_based_engine<uint32_t, philox4x32_prf<>, 1> eng{{global_seed, timestep, atomid}};
+            counter_based_engine<philox4x32_prf<>, 1> eng{{global_seed, timestep, atomid}};
             normal_distribution nd;
             auto n1 = nd(eng);
             auto n2 = nd(eng);

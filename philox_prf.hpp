@@ -6,16 +6,16 @@
 
 namespace std{
 
-template<size_t w, size_t n, size_t r, typename detail::uint_fast<w> ... consts>
+template<typename ResultType, size_t w, size_t n, size_t r, ResultType ... consts>
 class philox_prf{
     static_assert(w>0);
     static_assert(n==2 || n==4); // FIXME - 8, 16?
     static_assert(sizeof ...(consts) == n);
     // assert that all constants are < 2^w ?
-    using Uint = detail::uint_fast<w>;
-    using in_value_type = Uint;
+    using in_value_type = ResultType;
 
 public:
+    using result_type = ResultType;
     static constexpr size_t in_bits = w;
     using in_type = array<in_value_type, 3*n/2>;
     static constexpr size_t result_bits = w;
@@ -67,7 +67,7 @@ public:
     }
 
 private:
-    static constexpr array<Uint, n> MC = {consts...};
+    static constexpr array<result_type, n> MC = {consts...};
     static constexpr in_value_type inmask = detail::fffmask<in_value_type, in_bits>;
 }; 
 
@@ -75,14 +75,14 @@ private:
 // but it also forces the programmer to add an empty template parameter list if
 // the default value is desired (bad).  Some additional syntactic sugar is needed.
 template <unsigned R=10>
-using philox2x32_prf = philox_prf<32, 2, R, 0xD256D193, 0x9E3779B9>;
+using philox2x32_prf = philox_prf<uint_least32_t, 32, 2, R, 0xD256D193, 0x9E3779B9>;
 template<unsigned R=10>
-using philox4x32_prf = philox_prf<32, 4, R, 0xD2511F53, 0x9E3779B9,
+using philox4x32_prf = philox_prf<uint_least32_t, 32, 4, R, 0xD2511F53, 0x9E3779B9,
                                                     0xCD9E8D57, 0xBB67AE85>;
 
 template <unsigned R=10>
-using philox2x64_prf = philox_prf<64, 2, R, 0xD2B74407B1CE6E93, 0x9E3779B97F4A7C15>;
+using philox2x64_prf = philox_prf<uint_least64_t, 64, 2, R, 0xD2B74407B1CE6E93, 0x9E3779B97F4A7C15>;
 template <unsigned R=10>
-using philox4x64_prf = philox_prf<64, 4, R, 0xD2E7470EE14C6C93, 0x9E3779B97F4A7C15,
+using philox4x64_prf = philox_prf<uint_least64_t, 64, 4, R, 0xD2E7470EE14C6C93, 0x9E3779B97F4A7C15,
                                                     0xCA5A826395121157, 0xBB67AE8584CAA73B>;
 } // namespace std

@@ -33,6 +33,7 @@ public:
     // the algorithm is "really" expressed in terms of 64-bit
     // arithmetic.  So let's expose that.  The number of 64-bit
     // inputs is a template parameter.
+    using result_type = uint64_t;
     static constexpr size_t in_bits = 64;
     using in_type = std::array<uint64_t, in_N>;
     static constexpr size_t result_bits = 64;

@@ -25,18 +25,18 @@
 
 namespace std{
 
-template<size_t  w, size_t n, size_t R, typename detail::uint_fast<w> ks_parity, int ... consts>
+template<unsigned_integral ResultType, size_t  w, size_t n, size_t R, ResultType ks_parity, int ... consts>
 class threefry_prf {
-    static_assert(w>0);
+    static_assert(w <= numeric_limits<ResultType>::digits);
     static_assert( n==2 || n==4, "N must be 2 or 4" );
     static_assert(sizeof ...(consts) == 4*n);
     static_assert(R<=20, "loops are manually unrolled to R=20 only");
 
     static constexpr array<int, 4*n> rotation_constants = {consts ...};
 
-    // The static methods are all templated on a Uint, which
-    // can either be a bona fide unsigned integer type OR
-    // a simd vector of unsigned integers.
+    // The static methods are all templated on a Uint.  The
+    // only instantiations will be with Uint=ResultType or
+    // with Uint = a simd vector of ResultType.
     template <typename Uint>
     static constexpr Uint rotleft(Uint x, int r){
         return ((x<<r) | (x>>(w-r))) & inmask;
@@ -167,8 +167,9 @@ class threefry_prf {
         cc0 = c0; cc1 = c1; cc2 = c2; cc3 = c3;
 #endif
     }
-    using in_value_type = detail::uint_fast<w>;
+    using in_value_type = ResultType;
 public:
+    using result_type = ResultType;
     static constexpr size_t in_bits = w;
     using in_type = array<in_value_type, 2*n>;
     static constexpr size_t result_bits = w;
@@ -303,20 +304,20 @@ private:
 // but it also forces the programmer to add an empty template parameter list if
 // the default value is desired (bad).  Some additional syntactic sugar is needed.
 template<unsigned R=20>
-using threefry2x32_prf = threefry_prf<32, 2, R, 0x1BD11BDA,
+using threefry2x32_prf = threefry_prf<uint_least32_t, 32, 2, R, 0x1BD11BDA,
                                              13, 15, 26, 6, 17, 29, 16, 24>;
 
 template<unsigned R=20>
-using threefry2x64_prf = threefry_prf<64, 2, R, 0x1BD11BDAA9FC1A22,
+using threefry2x64_prf = threefry_prf<uint_least64_t, 64, 2, R, 0x1BD11BDAA9FC1A22,
                                              16, 42, 12, 31, 16, 32, 24, 21>;
 
 template<unsigned R=20>
-using threefry4x32_prf = threefry_prf<32, 4, R, 0x1BD11BDA,
+using threefry4x32_prf = threefry_prf<uint_least32_t, 32, 4, R, 0x1BD11BDA,
                                              10, 11, 13, 23, 6, 17, 25, 18,
                                              26, 21, 27, 5, 20, 11, 10, 20>;
 
 template<unsigned R=20>
-using threefry4x64_prf = threefry_prf<64, 4, R, 0x1BD11BDAA9FC1A22,
+using threefry4x64_prf = threefry_prf<uint_least64_t, 64, 4, R, 0x1BD11BDAA9FC1A22,
                                              14, 52, 23, 5, 25, 46, 58, 32,
                                              16, 57, 40, 37, 33, 12, 22, 32>;
 } // namespace std

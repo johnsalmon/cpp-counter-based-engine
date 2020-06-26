@@ -13,21 +13,22 @@
 
 namespace std{
 
-template<unsigned_integral ResultType, typename PRF, size_t CounterWords>
+template<typename PRF, size_t CounterWords>
 class counter_based_engine{
-    static_assert(numeric_limits<ResultType>::max() >= PRF::result_N);
+    static_assert(numeric_limits<typename PRF::result_type>::max() >= PRF::result_N);
     static_assert(CounterWords > 0);
-    static_assert(CounterWords * PRF::in_bits <= numeric_limits<uintmax_t>::digits); // could be relaxed with more code
+    // FIXME! static_assert(CounterWords * PRF::in_bits <= numeric_limits<uintmax_t>::digits); // could be relaxed with more code
     // assertions that should be part of a PRF concept:
     static_assert(PRF::in_bits > 0);
     static_assert(PRF::result_bits > 0);
     static_assert(PRF::result_N > 0);
     //  PRF::in_type is std::array-like (subscriptable, has an integral value_type, specializes tuple_size)
 public:
+    using result_type = PRF::result_type;
     static constexpr size_t result_bits = PRF::result_bits;
     static constexpr size_t counter_words = CounterWords;
 private:
-    using prf_result_type = array<ResultType, PRF::result_N>;
+    using prf_result_type = array<result_type, PRF::result_N>;
     static constexpr size_t result_N = PRF::result_N;
 
     using in_type = PRF::in_type;
@@ -37,8 +38,8 @@ private:
     static_assert(integral<in_value_type>);
 
     static constexpr auto in_mask = detail::fffmask<in_value_type, PRF::in_bits>;
-    static constexpr auto result_mask = detail::fffmask<ResultType,
-                                                        std::min<size_t>(numeric_limits<ResultType>::digits, result_bits)>;
+    static constexpr auto result_mask = detail::fffmask<result_type,
+                                                        std::min<size_t>(numeric_limits<result_type>::digits, result_bits)>;
 
     in_type in;
     prf_result_type results;
@@ -79,8 +80,7 @@ private:
 
 public:
     // First, satisfy the requirements for a uniform_random_bit_generator
-    // result_type
-    using result_type = ResultType;
+    // result_type - defined above
     // min, max
     static constexpr result_type min(){ return 0; }
     static constexpr result_type max(){ return result_mask; };
@@ -227,7 +227,7 @@ public:
         // FIXME - save/restore is state
         istream_iterator<in_value_type> isiin(is);
         copy_n(isiin, in_N, begin(p.in));
-        ResultType ridx;
+        result_type ridx;
         is >> ridx;
         if(ridx)
             PRF{}(ranges::single_view(p.in), begin(p.results));
@@ -287,15 +287,14 @@ public:
     
 };
 
-using philox2x32 = counter_based_engine<uint_least32_t, philox2x32_prf<>, 2>;
-using philox4x32 = counter_based_engine<uint_least32_t, philox4x32_prf<>, 2>;
-using philox2x64 = counter_based_engine<uint_least64_t, philox2x64_prf<>, 1>;
-using philox4x64 = counter_based_engine<uint_least64_t, philox4x64_prf<>, 1>;
+using philox2x32 = counter_based_engine<philox2x32_prf<>, 2>;
+using philox4x32 = counter_based_engine<philox4x32_prf<>, 2>;
+using philox2x64 = counter_based_engine<philox2x64_prf<>, 1>;
+using philox4x64 = counter_based_engine<philox4x64_prf<>, 1>;
 
-using threefry2x32 = counter_based_engine<uint_least32_t, threefry2x32_prf<>, 2>;
-using threefry4x32 = counter_based_engine<uint_least32_t, threefry4x32_prf<>, 2>;
-using threefry2x64 = counter_based_engine<uint_least64_t, threefry2x64_prf<>, 1>;
-using threefry4x64 = counter_based_engine<uint_least64_t, threefry4x64_prf<>, 1>;
-
+using threefry2x32 = counter_based_engine<threefry2x32_prf<>, 2>;
+using threefry4x32 = counter_based_engine<threefry4x32_prf<>, 2>;
+using threefry2x64 = counter_based_engine<threefry2x64_prf<>, 1>;
+using threefry4x64 = counter_based_engine<threefry4x64_prf<>, 1>;
 
 } // namespace std

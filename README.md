@@ -138,6 +138,9 @@ In any case, the minimal information that needs to be communicated is:
   This is called `P::in_bits` in the example code.  `philoxNxW` and
   `threefryNxW` have `in_bits=W`.
 
+- the type of value delivered to the output range.  This is called
+  `P::result_type` in the example code.
+
 - the number of "random" bits in each value delivered to the output range.
   This is called `P::result_bits` in the example code.   `philoxNxW`
   and `threefryNxW` have `result_bits=W`.
@@ -189,7 +192,7 @@ standardization.
 
 `counter_based_engine` is a template class declared as:
 
-    template <unsigned_integral ResultType, typename PRF, size_t CounterWords>
+    template <typename PRF, size_t CounterWords>
     class counter_based_engine;
 
 The unsigned_integral ResultType is similar to the first Uint template
@@ -216,11 +219,11 @@ are managed by the `counter_based_engine` itself.  They represent a
 Given a type P that satisfies the requirements of a PRF, and an unsigned
 integral ResultType, and an unsigned value CounterWords (typically 1 or 2)
 
-    counter_base_engine<ResultType, P, CounterWords>
+    counter_base_engine<P, CounterWords>
 
 satisfies the requirements of a Random Number Engine:
 
-- the result_type is `ResultType`
+- the result_type is `PRF::result_type`
 
 - Equality comparison and stream insertion and extraction operators compare,
 insert and extract the state's `iv` and `result_index`.
