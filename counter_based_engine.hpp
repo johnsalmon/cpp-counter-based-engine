@@ -13,33 +13,34 @@
 
 namespace std{
 
-template<typename PRF, size_t CounterWords>
+template<typename prf, size_t c>
 class counter_based_engine{
-    static_assert(numeric_limits<typename PRF::result_type>::max() >= PRF::result_N);
-    static_assert(CounterWords > 0);
-    // FIXME! static_assert(CounterWords * PRF::in_bits <= numeric_limits<uintmax_t>::digits); // could be relaxed with more code
-    // assertions that should be part of a PRF concept:
-    static_assert(PRF::in_bits > 0);
-    static_assert(PRF::result_bits > 0);
-    static_assert(PRF::result_N > 0);
-    //  PRF::in_type is std::array-like (subscriptable, has an integral value_type, specializes tuple_size)
+    static_assert(numeric_limits<typename prf::output_value_type>::max() >= prf::output_count);
+    static_assert(c > 0);
+    // FIXME! static_assert(c * prf::input_word_size <= numeric_limits<uintmax_t>::digits); // could be relaxed with more code
+    // assertions that should be part of a prf concept:
+    static_assert(prf::input_word_size > 0);
+    // Question:  should it be possible for the input and output input_word_size to be different?
+    static_assert(prf::output_word_size > 0);
+    static_assert(prf::output_count > 0);
+    //  prf::in_type is std::array-like (subscriptable, has an integral value_type, specializes tuple_size)
 public:
-    using result_type = PRF::result_type;
-    static constexpr size_t result_bits = PRF::result_bits;
-    static constexpr size_t counter_words = CounterWords;
+    using result_type = prf::output_value_type;
+    static constexpr size_t word_size = prf::output_word_size;
+    static constexpr size_t counter_words = c;
 private:
-    using prf_result_type = array<result_type, PRF::result_N>;
-    static constexpr size_t result_N = PRF::result_N;
+    using prf_result_type = array<result_type, prf::output_count>;
+    static constexpr size_t result_count = prf::output_count;
 
-    using in_type = PRF::in_type;
-    static constexpr size_t in_N = tuple_size<in_type>::value;
-    static constexpr size_t in_bits = PRF::in_bits;
-    using in_value_type = in_type::value_type;
+    static constexpr size_t input_count = prf::input_count;
+    static constexpr size_t input_word_size = prf::input_word_size;
+    using in_value_type = prf::input_value_type;
+    using in_type = array<in_value_type, input_count>;
     static_assert(integral<in_value_type>);
 
-    static constexpr auto in_mask = detail::fffmask<in_value_type, PRF::in_bits>;
+    static constexpr auto in_mask = detail::fffmask<in_value_type, prf::input_word_size>;
     static constexpr auto result_mask = detail::fffmask<result_type,
-                                                        std::min<size_t>(numeric_limits<result_type>::digits, result_bits)>;
+                                                        std::min<size_t>(numeric_limits<result_type>::digits, word_size)>;
 
     in_type in;
     prf_result_type results;
@@ -57,17 +58,17 @@ private:
     // carefully carrying bits between the first few counter_words
     // elements of in[].  But this is a lot easier.
     // WARNING:  the code is poorly tested.
-    using counter_type = detail::uint_fast<CounterWords*PRF::in_bits>;
+    using counter_type = detail::uint_fast<c*prf::input_word_size>;
     counter_type get_counter() const{
         uint64_t ret = 0;
         for(size_t i=0; i<counter_words; ++i)
-            ret |= uint64_t(in[i])<<(in_bits * i);
+            ret |= uint64_t(in[i])<<(input_word_size * i);
         return ret;
     }
     static void set_counter(in_type& inn, counter_type newctr){
-        static_assert(in_bits * counter_words <= numeric_limits<counter_type>::digits);
+        static_assert(input_word_size * counter_words <= numeric_limits<counter_type>::digits);
         for(size_t i=0; i<counter_words; ++i)
-            inn[i] = (newctr >> (in_bits*i)) & in_mask;
+            inn[i] = (newctr >> (input_word_size*i)) & in_mask;
     }
     void incr_counter(){
         in[0] = (in[0] + 1) & in_mask;
@@ -93,11 +94,11 @@ public:
         auto ri = ridxref();
         if(ri == 0){
             // call prf and increment ctr
-            PRF{}(in, begin(results));
+            prf{}(begin(in), begin(results));
             incr_counter();
         }
         result_type ret = results[ri++];
-        if(ri == result_N)
+        if(ri == result_count)
             ri = 0;
         ridxref() = ri;
         return ret;
@@ -121,33 +122,33 @@ public:
         // Deliver any saved results
         auto ri = ridxref();
         if(ri && n){
-            while(ri < result_N && n){
+            while(ri < result_count && n){
                 *out++ = results[ri++];
                 --n;
             }
-            if(ri == result_N)
+            if(ri == result_count)
                 ri = 0;
         }
             
         // Call the bulk generator
-        auto nprf = n/result_N;
+        auto nprf = n/result_count;
         // lazily construct the input range.  No need
         // to allocate and fill a big chunk of memory
         using namespace std::ranges;
         auto c0 = get_counter();
-        out = PRF{}(views::iota(c0, c0+nprf) |
+        out = prf{}.generate(views::iota(c0, c0+nprf) |
                     views::transform([&](auto ctr){
                                          auto inn = in;
                                          set_counter(inn, ctr);
                                          return inn;
                                      }),
                     out);
-        n -= nprf*result_N;
+        n -= nprf*result_count;
         set_counter(in, c0 + nprf);
 
         // Restock the results array
         if(ri == 0 && n){
-            PRF{}(ranges::single_view(in), std::begin(results));
+            prf{}(std::begin(in), std::begin(results));
             incr_counter();
         }
             
@@ -169,8 +170,8 @@ public:
     template <typename SeedSeq> // FIXME - disambiguate result_type
     void seed(SeedSeq& s){
         // Generate 32-bits at a time with the SeedSeq.
-        // Generate enough to fill PRF::in
-        constexpr size_t N32_per_in = (in_bits-1)/32 + 1;
+        // Generate enough to fill prf::in
+        constexpr size_t N32_per_in = (input_word_size-1)/32 + 1;
         array<uint_fast32_t, N32_per_in * seed_N> k32;
         s.generate(k32.begin(), k32.end());
 
@@ -195,9 +196,9 @@ public:
     //  an in_value_type that's wider than w.
     void discard(unsigned long long jump) {
         auto oldridx = ridxref();
-        unsigned newridx = (jump + oldridx) % result_N;
+        unsigned newridx = (jump + oldridx) % result_count;
         unsigned long long jumpll = jump + oldridx - (!oldridx && newridx);
-        jumpll /= result_N;
+        jumpll /= result_count;
         jumpll += !oldridx;
         in_value_type jumpctr = jumpll & in_mask;
         in_value_type oldctr = get_counter();
@@ -205,10 +206,10 @@ public:
         set_counter(in, newctr);
         if(newridx){
             if(jumpctr)
-                PRF{}(ranges::single_view(in), begin(results));
+                prf{}(begin(in), begin(results));
             incr_counter();
         }else if(newctr == 0){
-            newridx = result_N;
+            newridx = result_count;
         }
                 
         ridxref() = newridx;
@@ -226,11 +227,11 @@ public:
     friend basic_istream<CharT, Traits>& operator>>(basic_istream<CharT, Traits>& is, counter_based_engine& p){
         // FIXME - save/restore is state
         istream_iterator<in_value_type> isiin(is);
-        copy_n(isiin, in_N, begin(p.in));
+        copy_n(isiin, input_count, begin(p.in));
         result_type ridx;
         is >> ridx;
         if(ridx)
-            PRF{}(ranges::single_view(p.in), begin(p.results));
+            prf{}(begin(p.in), begin(p.results));
         p.ridxref() = ridx;
         return is;
     }
@@ -240,14 +241,14 @@ public:
     // counter_based_engine has public methods and types that are not
     // required for a Uniform Random Number Engine:
 
-    // - the type of the underlying PRF and a reference to it.
-    using prf_type = PRF;
+    // - the type of the underlying prf and a reference to it.
+    using prf_type = prf;
 
     // - how many values are consumed in the seed(InRange) member
     // and corresponding constructor?
-    static constexpr size_t seed_N = in_N - counter_words;
-    static constexpr size_t seed_bits = PRF::in_bits;
-    // N.B.  result_bits is declared at the top.
+    static constexpr size_t seed_N = input_count - counter_words;
+    static constexpr size_t seed_bits = prf::input_word_size;
+    // N.B.  word_size is declared at the top.
     
     // Constructors and seed members from from a 'seed-range'
     template <integral T>
@@ -268,7 +269,7 @@ public:
         // copy _in to in:
         auto inp = ranges::begin(_in);
         auto ine = ranges::end(_in);
-        for(size_t i=counter_words; i<in_N; ++i)
+        for(size_t i=counter_words; i<input_count; ++i)
             in[i] = (inp == ine) ? 0 : (*inp++) & in_mask; // ?? throw if *inp > in_mask??
         set_counter(in, 0);
         ridxref() = 0;
@@ -287,14 +288,14 @@ public:
     
 };
 
-using philox2x32 = counter_based_engine<philox2x32_prf<>, 2>;
-using philox4x32 = counter_based_engine<philox4x32_prf<>, 2>;
-using philox2x64 = counter_based_engine<philox2x64_prf<>, 1>;
-using philox4x64 = counter_based_engine<philox4x64_prf<>, 1>;
+using philox2x32 = counter_based_engine<philox2x32_prf, 2>;
+using philox4x32 = counter_based_engine<philox4x32_prf, 2>;
+using philox2x64 = counter_based_engine<philox2x64_prf, 1>;
+using philox4x64 = counter_based_engine<philox4x64_prf, 1>;
 
-using threefry2x32 = counter_based_engine<threefry2x32_prf<>, 2>;
-using threefry4x32 = counter_based_engine<threefry4x32_prf<>, 2>;
-using threefry2x64 = counter_based_engine<threefry2x64_prf<>, 1>;
-using threefry4x64 = counter_based_engine<threefry4x64_prf<>, 1>;
+using threefry2x32 = counter_based_engine<threefry2x32_prf, 2>;
+using threefry4x32 = counter_based_engine<threefry4x32_prf, 2>;
+using threefry2x64 = counter_based_engine<threefry2x64_prf, 1>;
+using threefry4x64 = counter_based_engine<threefry4x64_prf, 1>;
 
 } // namespace std

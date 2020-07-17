@@ -52,10 +52,10 @@ int main(int argc, char **argv){
     using prf_t = decltype(eng3)::prf_type;
     prf_t prf1;
     cout << "Call it directly  on {0, 0, 0, 0, 0, i}:\n";
-    array<uint64_t, 6> in{};  // in full generality, array<prf_t::in_value_type, prf_t::in_N>
+    array<uint64_t, 6> in{};  // in full generality, array<prf_t::input_value_type, prf_t::input_count>
     array<uint64_t, 4> result;
     for(unsigned i=0; i<10; ++i){
-        prf1(ranges::single_view(in), begin(result));
+        prf1(begin(in), begin(result));
         in[5]++;
         cout << i << ": " << result << "\n";
     }
@@ -63,11 +63,11 @@ int main(int argc, char **argv){
     
     // Check that the examples in README.md actually work...
     {
-        using prf_t = philox4x64_prf<>;
+        using prf_t = philox4x64_prf;
         static const size_t Nin  = 3;
-        prf_t::in_type in[Nin] = {{1,2,3,4,5,6}, {7,8, 9,10,11,12}, {13,14,15,16,17,18}};
-        uint64_t out[Nin*prf_t::result_N]; // 12 values
-        prf_t{}(in, begin(out));
+        array<prf_t::input_value_type, prf_t::input_count> in[Nin] = {{1,2,3,4,5,6}, {7,8, 9,10,11,12}, {13,14,15,16,17,18}};
+        uint64_t out[Nin*prf_t::output_count]; // 12 values
+        prf_t{}.generate(in, begin(out));
         cout << "Random values obtained directly from philox4x64_prf: ";
         for(const auto o : out)
             cout << o << " ";
@@ -96,7 +96,7 @@ int main(int argc, char **argv){
             // keyed_prf generator allows the overall algorithm
             // freedom that is not available when using a conventional
             // Random Number Generator.
-            counter_based_engine<philox4x32_prf<>, 1> eng{{global_seed, timestep, atomid}};
+            counter_based_engine<philox4x32_prf, 1> eng{{global_seed, timestep, atomid}};
             normal_distribution nd;
             auto n1 = nd(eng);
             auto n2 = nd(eng);

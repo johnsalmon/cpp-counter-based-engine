@@ -1,8 +1,9 @@
 # Counter Based Random Numbers in C++ - Discussion and Code
 
 The source code and text files in this directory are intended to
-promote discussion and perhaps evolve into a "paper" to be considered
-by SG6 (Numerics) subgroup.
+promote discussion.  They have evolved into a "paper" to be considered
+by SG6 (Numerics) subgroup.  It should be available in late July 2020
+as http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2075r0.pdf
 
 The code and text build on:
 
@@ -91,15 +92,61 @@ requirements.  Eventually, these will have to be expressed in
 ## Requirements for Pseudo-Random Function (PRF)
 
 A *pseudo-random function* p of type P is a function object that
-delivers unsigned integer values to an output_range when called with
-an argument that is an input_range of arrays of integers.  In other
-words, PRF's are required to support a "vector API" similar to the one
-in P1068.  I.e., each invocation of the PRF processes an entire
-input_range of inputs, and the resulting random values are written to
-an output_range.  This API permits (but does not require) the
+delivers unsigned integer values to an output iterator when called with
+an argument that is an input iterator to an array of integers.  This is
+essentially the API proposed in P2075R1.
+
+In order to make a PRF usable generically, e.g., by
+`counter_based_engine`, information about the characteristics of the
+PRF's inputs and outputs must be available to the caller.  There are
+many possible ways to represent this information.  One way is via
+static constexpr members and nested typedef-names inside the PRF
+object (this is the strategy in the example code and in P2075R1).
+Another possibility is via a traits class.
+
+In any case, the minimal information that needs to be communicated is:
+
+- the value_type of the PRF's input_iterator argument.  This is called
+  `P::input_value_type` in the example code.
+  
+- the number of input values that will be consumed by each invocation
+  of the PRF's operator().  This is called `P::input_count` in the
+  example code.  `philoxNxW` has `input_count=3N/2`.  `threefryNxW`
+  has `input_count=2N`.
+
+- the number of meaningful bits in each of the values of the input_iterator.
+  This is called `P::input_word_size` in the example code.  `philoxNxW` and
+  `threefryNxW` have `input_word_size=W`.
+
+- the type of value delivered to the output range.  This is called
+  `P::output_value_type` in the example code.
+
+- the number of "random" bits in each value delivered to the output range.
+  This is called `P::output_word_size` in the example code.   `philoxNxW`
+  and `threefryNxW` have `result_bits=W`.
+  
+- the number of random values delivered for each in_type.
+  This is called `P::output_count` in the example code.  `philoxNxW`
+  and `threefryNxW` have `output_count = N`.
+
+Note that P2075R1 does not distinguish between `input_word_size`
+and `output_word_size`.  It proposes only one value, called `word_size`,
+which is sufficient for philox, but slightly less general.  Also note
+that P2075R1 does not distinguish between `input_value_type` and
+`output_value_type`.  It proposes only `result_type`, which is
+sufficient for philox, but slightly less general.
+
+### Support for Vector API
+In addtion, the code here provides a "vector API":  A 'generate'
+method that takes a range of ranges and calls the underlying
+function on each sub-range, generating integers that are delivered
+to the output range.  This API permits (but does not require) the
 underlying implementation to benefit from loop unrolling,
 vectorization, SIMD parallelism, etc.  The code in threefry_prf.hpp
 shows how a PRF can use SIMD-based parallelism internally.
+The code in counter_based_engine.hpp makes use of the generate()
+method in its implementation of the proposed (P1068R3) vector
+API for random number engines.
 
 The vector API allows the program to call a prf's vector API on `Nin`
 distinct inputs.  For example:
@@ -109,47 +156,13 @@ distinct inputs.  For example:
       // an array of Nin in_types (each of which is an array-type prf_t::in_type)
       prf_t::in_type  in[Nin] = {{...}, {...}, ...};
       uint64_t      out[Nin * prf_t::result_N]; // caller sinks the results
-      prf(in, begin(out));
+      prf.generate(in, begin(out));
       
 which evalutes the underlying psedo-random algorithm on each of the
 `Nin` elements of the `in[]` array, with each evaluation writing
 `result_N` values into the `out[]` array.
 
-In order to make a PRF usable generically, e.g., by
-`counter_based_engine`, information about the characteristics of the
-PRF's inputs and outputs must be available to the caller.  There
-are many possible ways to represent this information.  One way is via
-static constexpr members and nested typedef-names inside the PRF
-object (this is the strategy in the example code).  Another
-possibility is via a traits class.
-
-In any case, the minimal information that needs to be communicated is:
-
-- the value_type of the PRF's input_range argument.  This is called `P::in_type`
-  in the example code.
-  
-  The in_type must be std::array-like.  That is, it must be subscriptable,
-  it must specialize std::tuple_size, it must have a `value_type`
-  nested typedef-name, and the `value_type` must be integral.
-  `philoxNxW` and `threefryNxW` have `using in_type = array<uintW_least, N/2>`
-  and `array<uintW_least, N>` respectively.
-        
-- the number of meaningful bits in each of the elements of in_type.
-  This is called `P::in_bits` in the example code.  `philoxNxW` and
-  `threefryNxW` have `in_bits=W`.
-
-- the type of value delivered to the output range.  This is called
-  `P::result_type` in the example code.
-
-- the number of "random" bits in each value delivered to the output range.
-  This is called `P::result_bits` in the example code.   `philoxNxW`
-  and `threefryNxW` have `result_bits=W`.
-  
-- the number of random values delivered for each in_type.
-  This is called `P::result_N` in the example code.  `philoxNxW`
-  and `threefryNxW` have `result_N = N`.
-
-The PRF's operator() member-function itself is declared as follows:
+The PRF's generate() member-function itself is declared as follows:
 
 ```
     template <ranges::input_range InputRangeOfInTypes, weakly_incrementable O>
@@ -157,18 +170,18 @@ The PRF's operator() member-function itself is declared as follows:
              is_same_v<iter_value_t<ranges::iterator_t<InputRangeOfInTypes>>, in_type> &&
              integral<iter_value_t<O>> &&
              indirectly_writable<O, iter_value_t<O>>
-    O operator()(InputRangeOfInTypes&& in, O result) const;
+    O generator(InputRangeOfInTypes&& in, O result) const;
 ```
 
 These constraints (perhaps with some additions) should be part of any
 formal specification of a PRF.  This set of constraints guarantees
 that:
 
-* the first argument to operator():
+* the first argument to generate(in, out):
     - satisfies `input_range`
     - satisfies `sized_range`
     - has an `iter_value_t` that is_same as `in_type`, i.e., it's `std::array<integral, in_N>`
-* and that  the second argument to operator():
+* and that  the second argument to generate(in, out):
     - satisfies `weakly_incrementable`
     - satisfies `indirectly_writable`
     - has an integral `iter_value_t`
@@ -195,31 +208,12 @@ standardization.
     template <typename PRF, size_t CounterWords>
     class counter_based_engine;
 
-The unsigned_integral ResultType is similar to the first Uint template
-parameter of other standard engines.  It allows the program to
-speicify the type of values returned by the generator.  Nevertheless,
-the range of result values (min() and max()) is determined by the
-PRF's `result_bits`.
-
-The behavior of the counter_based_engine is specified in terms of these
-'exposition-only' members:
-
-  - a results member declared as: `array<ResultType, PRF::result_N> results;`
-  - an input-value, iv, declared as:  `PRF::in_type iv;`
-  - a notional `result_index` (which in practice is stored in results[0])
-  - a notional `Y` result_type that communicates from the TA to the GA.
-
-All but the first CounterWords elements of `iv` are set by the
-`counter_based_engine`'s constructors and are modified only by the
-`seed()` member functions.  The first CounterWords elements of `iv`
-are managed by the `counter_based_engine` itself.  They represent a
-'counter' with values in the range
-0,...,2^(CounterWords*PRF::in_bits).
+The TA, GA and other properties and characteristics are described in P2075R1.
 
 Given a type P that satisfies the requirements of a PRF, and an unsigned
 integral ResultType, and an unsigned value CounterWords (typically 1 or 2)
 
-    counter_base_engine<P, CounterWords>
+    counter_base_engine<PRF, c>
 
 satisfies the requirements of a Random Number Engine:
 
@@ -227,33 +221,6 @@ satisfies the requirements of a Random Number Engine:
 
 - Equality comparison and stream insertion and extraction operators compare,
 insert and extract the state's `iv` and `result_index`.
-
-- constructors and seed methods:
-
-  In the straw-man implementation (this could easily be changed), all
-  the standard constructors and seed methods forward through
-  seed(SeedSeq), where the SeedSeq is a std::seed_seq constructed from
-  the constructor's or seed() method's arguments.
-
-  To seed a CBE from a seed_seq, the `seed_seq`'s `generate` method is called once
-  to generate enough bits to populate all but the
-  first CounterWords elements of the CBE's `iv`.  Then the first CounterWords
-  elements of `iv` and `rindex` are set to 0.
-
-- The Transition Algorithm is:
-```
-   if result_index is zero,
-       prf(ranges::single_view(iv), begin(results))
-       increment the counter {iv[0] ... iv[CounterWords-1]}
-   Y = results[result_index]
-   result_index = (result_index+1) modulo result_N
-```
-
-- The Generation Algorithm is:
-
-```
-   return the value of Y was assigned in the last TA
-```
 
 ### Vector API for generation of random numbers
 
@@ -277,7 +244,7 @@ single 3.7 GHz Skylake core (using AVX-512 instructions).
 
 ### General properties of counter_based_engine:
 
-An instance of `counter_based_engine<ResultType, PRF, CounterWords>`
+An instance of `counter_based_engine<PRF, CounterWords>`
 allows for
 
     2^(in_bits*(in_N-CounterWords))

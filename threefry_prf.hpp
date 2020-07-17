@@ -25,9 +25,9 @@
 
 namespace std{
 
-template<unsigned_integral ResultType, size_t  w, size_t n, size_t R, ResultType ks_parity, int ... consts>
+template<unsigned_integral UIntType, size_t  w, size_t n, size_t R, UIntType ks_parity, int ... consts>
 class threefry_prf {
-    static_assert(w <= numeric_limits<ResultType>::digits);
+    static_assert(w <= numeric_limits<UIntType>::digits);
     static_assert( n==2 || n==4, "N must be 2 or 4" );
     static_assert(sizeof ...(consts) == 4*n);
     static_assert(R<=20, "loops are manually unrolled to R=20 only");
@@ -35,8 +35,8 @@ class threefry_prf {
     static constexpr array<int, 4*n> rotation_constants = {consts ...};
 
     // The static methods are all templated on a Uint.  The
-    // only instantiations will be with Uint=ResultType or
-    // with Uint = a simd vector of ResultType.
+    // only instantiations will be with Uint=UIntType or
+    // with Uint = a simd vector of UIntType.
     template <typename Uint>
     static constexpr Uint rotleft(Uint x, int r){
         return ((x<<r) | (x>>(w-r))) & inmask;
@@ -167,48 +167,63 @@ class threefry_prf {
         cc0 = c0; cc1 = c1; cc2 = c2; cc3 = c3;
 #endif
     }
-    using in_value_type = ResultType;
+    using in_array_type = array<UIntType, 2*n>;
 public:
-    using result_type = ResultType;
-    static constexpr size_t in_bits = w;
-    using in_type = array<in_value_type, 2*n>;
-    static constexpr size_t result_bits = w;
-    static constexpr size_t result_N = n;
+    using output_value_type = UIntType;
+    using input_value_type = UIntType;
+    static constexpr size_t input_word_size = w;
+    static constexpr size_t output_word_size = w;
+    static constexpr size_t input_count = 2*n;
+    static constexpr size_t output_count = n;
+
+    // In P2075R1 this returns void, but it makes more sense to return
+    // the "final" OutputIterator2
+    template<typename InputIterator1, typename OutputIterator2>
+    OutputIterator2 operator()(InputIterator1 input, OutputIterator2 output){
+        if constexpr (n==2){
+            // N.B.  initializers are  evaluated in order, left-to-right.
+            array<input_value_type, input_count> inarray = {*input++, *input++, *input++, *input++};
+            return generate(ranges::single_view(inarray), output);
+        }else if constexpr (n==4){
+            array<input_value_type, input_count> inarray = {*input++, *input++, *input++, *input++, *input++, *input++, *input++, *input++};
+            return generate(ranges::single_view(inarray), output);
+        }            
+    }
 
     // More constraints?  We currently require that the first argument to
     // operator():
     //  - satisfies input_range
     //  - satisfies sized_range
-    //  - has a value_type that is_same as in_type, i.e., the value_type is an array
+    //  - has a value_type that is_same as in_array_type, i.e., the value_type is an array
     // and that  the second argument:
     //  - satisfies weakly_incrementable
     //  - is indirectly_writable
     //  - has an integral value_type
     template <ranges::input_range InputRangeOfInTypes, weakly_incrementable O>
     requires ranges::sized_range<InputRangeOfInTypes> &&
-             is_same_v<iter_value_t<ranges::iterator_t<InputRangeOfInTypes>>, in_type> &&
+             is_same_v<iter_value_t<ranges::iterator_t<InputRangeOfInTypes>>, in_array_type> &&
              integral<iter_value_t<O>> &&
              indirectly_writable<O, iter_value_t<O>>
-    O operator()(InputRangeOfInTypes&& in, O result) const{
+    O generate(InputRangeOfInTypes&& in, O result) const{
         auto cp = ranges::begin(in);
         auto nin = ranges::size(in);
         auto nleft = nin;
         // N.B.  simd_size=64 gives some spurious warnings about 64-byte alignment
 #if PRF_SIMD_SIZE_BYTES
         static constexpr int simd_size = PRF_SIMD_SIZE_BYTES;
-        static constexpr size_t simd_N = simd_size/sizeof(in_value_type);
+        static constexpr size_t simd_N = simd_size/sizeof(input_value_type);
         while(nleft>simd_N){
             // N.B. some slots may be uninitialized, but we never use
             // the results from those slots, so it shouldn't matter.
             nleft -= simd_N;
             if constexpr (n == 2){
-                in_value_type k0 __attribute__((vector_size(simd_size)));
-                in_value_type k1 __attribute__((vector_size(simd_size)));
-                in_value_type c0 __attribute__((vector_size(simd_size)));
-                in_value_type c1 __attribute__((vector_size(simd_size)));
+                input_value_type k0 __attribute__((vector_size(simd_size)));
+                input_value_type k1 __attribute__((vector_size(simd_size)));
+                input_value_type c0 __attribute__((vector_size(simd_size)));
+                input_value_type c1 __attribute__((vector_size(simd_size)));
 
                 for(unsigned s=0; s<simd_N; ++s){
-                    const in_type& next = *cp++;
+                    const in_array_type& next = *cp++;
                     c0[s] = next[0];
                     c1[s] = next[1];
                     k0[s] = next[2];
@@ -230,16 +245,16 @@ public:
                 }
 #endif // PRF_ALLOW_PERMUTED_RESULTS
             }else if constexpr (n == 4){
-                in_value_type k0 __attribute__((vector_size(simd_size)));
-                in_value_type k1 __attribute__((vector_size(simd_size)));
-                in_value_type k2 __attribute__((vector_size(simd_size)));
-                in_value_type k3 __attribute__((vector_size(simd_size)));
-                in_value_type c0 __attribute__((vector_size(simd_size)));
-                in_value_type c1 __attribute__((vector_size(simd_size)));
-                in_value_type c2 __attribute__((vector_size(simd_size)));
-                in_value_type c3 __attribute__((vector_size(simd_size)));
+                input_value_type k0 __attribute__((vector_size(simd_size)));
+                input_value_type k1 __attribute__((vector_size(simd_size)));
+                input_value_type k2 __attribute__((vector_size(simd_size)));
+                input_value_type k3 __attribute__((vector_size(simd_size)));
+                input_value_type c0 __attribute__((vector_size(simd_size)));
+                input_value_type c1 __attribute__((vector_size(simd_size)));
+                input_value_type c2 __attribute__((vector_size(simd_size)));
+                input_value_type c3 __attribute__((vector_size(simd_size)));
                 for(unsigned s=0; s<simd_N; ++s){
-                    const in_type& next = *cp++;
+                    const in_array_type& next = *cp++;
                     c0[s] = next[0];
                     c1[s] = next[1];
                     c2[s] = next[2];
@@ -272,14 +287,14 @@ public:
 #endif // PRF_SIMD_SIZE_BYTES
 
         while(nleft--){
-            const in_type& next = *cp++;
+            const in_array_type& next = *cp++;
             if constexpr (n == 2){
-                auto [c0, c1, k0, k1] = next; // all are in_value_type
+                auto [c0, c1, k0, k1] = next; // all are input_value_type
                 do2(c0, c1, k0, k1);
                 *result++ = c0;
                 *result++ = c1;
             }else if constexpr (n == 4){
-                auto [c0, c1, c2, c3, k0, k1, k2, k3] = next; // all are in_value_type
+                auto [c0, c1, c2, c3, k0, k1, k2, k3] = next; // all are input_value_type
                 do4(c0, c1, c2, c3, k0, k1, k2, k3);
                 *result++ = c0;
                 *result++ = c1;
@@ -291,7 +306,7 @@ public:
     }
 
 private:
-    static constexpr in_value_type inmask = detail::fffmask<in_value_type, in_bits>;
+    static constexpr input_value_type inmask = detail::fffmask<input_value_type, input_word_size>;
 };
 
 // These constants are carefully chosen to achieve good randomization.  
@@ -303,23 +318,28 @@ private:
 // FIXME - the template alias lets the program choose a different value of R (good)
 // but it also forces the programmer to add an empty template parameter list if
 // the default value is desired (bad).  Some additional syntactic sugar is needed.
-template<unsigned R=20>
-using threefry2x32_prf = threefry_prf<uint_least32_t, 32, 2, R, 0x1BD11BDA,
+template<size_t r>
+using threefry2x32_prf_r = threefry_prf<uint_least32_t, 32, 2, r, 0x1BD11BDA,
                                              13, 15, 26, 6, 17, 29, 16, 24>;
 
-template<unsigned R=20>
-using threefry2x64_prf = threefry_prf<uint_least64_t, 64, 2, R, 0x1BD11BDAA9FC1A22,
+template<size_t r>
+using threefry2x64_prf_r = threefry_prf<uint_least64_t, 64, 2, r, 0x1BD11BDAA9FC1A22,
                                              16, 42, 12, 31, 16, 32, 24, 21>;
 
-template<unsigned R=20>
-using threefry4x32_prf = threefry_prf<uint_least32_t, 32, 4, R, 0x1BD11BDA,
+template<size_t r>
+using threefry4x32_prf_r = threefry_prf<uint_least32_t, 32, 4, r, 0x1BD11BDA,
                                              10, 11, 13, 23, 6, 17, 25, 18,
                                              26, 21, 27, 5, 20, 11, 10, 20>;
 
-template<unsigned R=20>
-using threefry4x64_prf = threefry_prf<uint_least64_t, 64, 4, R, 0x1BD11BDAA9FC1A22,
+template<size_t r>
+using threefry4x64_prf_r = threefry_prf<uint_least64_t, 64, 4, r, 0x1BD11BDAA9FC1A22,
                                              14, 52, 23, 5, 25, 46, 58, 32,
                                              16, 57, 40, 37, 33, 12, 22, 32>;
+using threefry2x32_prf = threefry2x32_prf_r<20>;
+using threefry2x64_prf = threefry2x64_prf_r<20>;
+using threefry4x32_prf = threefry4x32_prf_r<20>;
+using threefry4x64_prf = threefry4x64_prf_r<20>;
+
 } // namespace std
 
 #pragma GCC diagnostic pop
