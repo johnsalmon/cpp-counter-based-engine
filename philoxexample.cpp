@@ -67,7 +67,7 @@ int main(int argc, char **argv){
         static const size_t Nin  = 3;
         array<prf_t::input_value_type, prf_t::input_count> in[Nin] = {{1,2,3,4,5,6}, {7,8, 9,10,11,12}, {13,14,15,16,17,18}};
         uint64_t out[Nin*prf_t::output_count]; // 12 values
-        prf_t{}.generate(in, begin(out));
+        prf_t{}.generate(in | views::transform([](auto& a){return begin(a);}), begin(out));
         cout << "Random values obtained directly from philox4x64_prf: ";
         for(const auto o : out)
             cout << o << " ";

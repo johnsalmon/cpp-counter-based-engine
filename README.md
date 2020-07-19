@@ -11,8 +11,10 @@ The code and text build on:
 - "Philox as an extension of the C++ RNG engines": http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2075r0.pdf
 - "Vector API for random number generation": http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1068r3.pdf
 
-The proposal is to split the P2075R0's templated philox_engine class
-into two parts:
+P2075R1 proposes two strategies for standardizing the philox family of
+random number generators.  The first is a straightforward development
+of P2075R0.  The second (elaborated here) splits P2075R0's
+templated philox_engine class into two parts:
 
 - a new kind of object: a *pseudo random function* (PRF), of which the
 new template classes `philox_prf` and `threefry_prf` are specific instances.
@@ -35,6 +37,45 @@ even stronger statistical properties).
 Nothing is lost in the new formulation because a
 `counter_based_engine` templated on a Philox PRF satisfies exactly
 the same Random Number Engine requirements as P2075R0.
+
+## Differences from P2075R1
+
+The code here differs slightly from the API in P2075R1.  Specific differences
+are:
+- it distinguishes betwen input_ and output_characteristics
+  of the prf.  I.e., prf::input_word_size, prf::output_word_size, prf::input_value_type
+  and prf::output_value_type instead of prf::word_size, prf::result_type.
+  
+- there are no max() and  min() methods in the prfs.  They're only in
+  counter_based_engine.
+
+- the round-count template parameter r is consistently declared with type size_t.
+
+- the prf::operator() returns an output_iterator that "points" one past the
+  last written output value.
+  
+- prfs have a "bulk generation" method called 'generate'
+  which invokes the underlying function multiple times.  The
+  implementation in threefry_prf demonstrates how such a
+  method can exploit simd capabilities.
+  
+- counter_based_engine is extended with a "bulk generation" method
+  following P1068r3 that calls its pseudo-random function's generate
+  method.
+  
+- counter_based_engine::seed(result_type value) considers only the lowest
+  prf::input_word_size bits of value.
+  
+- in philox_prf, when X and K are initialized from the input, X is
+  initialized first, followed by K.  It's worth noting that the "known
+  answer test" vectors in P2075R1 are consistent with this order, and
+  are inconsistent with the order specified elsewhere in P2075R1.
+
+- counter_based_engine has seed methods and constructors that allow
+  the caller to specify all elements of the internal "key".  The
+  number of such elements is counter_based_engine::seed_count, with
+  counter_based_engine::seed_word_size bits.
+  
 
 ## The Code
 Rather than start by writing "standard-ese", it's easier to start with
@@ -154,23 +195,23 @@ distinct inputs.  For example:
       prf_t prf;
       static const size_t Nin = ???; // caller decides how many
       // an array of Nin in_types (each of which is an array-type prf_t::in_type)
-      prf_t::in_type  in[Nin] = {{...}, {...}, ...};
-      uint64_t      out[Nin * prf_t::result_N]; // caller sinks the results
-      prf.generate(in, begin(out));
+      arrray<prf_t::input_value_type, prf_t::input_count> in[Nin] = {{...}, {...}, ...};
+      uint64_t      out[Nin * prf_t::output_count]; // caller sinks the results
+      prf.generate(in|views::transform([](auto& a){return begin(a);}), begin(out));
       
 which evalutes the underlying psedo-random algorithm on each of the
 `Nin` elements of the `in[]` array, with each evaluation writing
-`result_N` values into the `out[]` array.
+`output_count` values into the `out[]` array.
 
 The PRF's generate() member-function itself is declared as follows:
 
 ```
-    template <ranges::input_range InputRangeOfInTypes, weakly_incrementable O>
-    requires ranges::sized_range<InputRangeOfInTypes> &&
-             is_same_v<iter_value_t<ranges::iterator_t<InputRangeOfInTypes>>, in_type> &&
+    template <ranges::input_range InRange, weakly_incrementable O>
+    requires ranges::sized_range<InRange> &&
+             integral<iter_value_t<ranges::range_value_t<InRange>>> &&
              integral<iter_value_t<O>> &&
              indirectly_writable<O, iter_value_t<O>>
-    O generator(InputRangeOfInTypes&& in, O result) const;
+    O generate(InRange&& inrange, O result) const;
 ```
 
 These constraints (perhaps with some additions) should be part of any
@@ -180,7 +221,7 @@ that:
 * the first argument to generate(in, out):
     - satisfies `input_range`
     - satisfies `sized_range`
-    - has an `iter_value_t` that is_same as `in_type`, i.e., it's `std::array<integral, in_N>`
+    - has an `iter_value_t` that is an `input_iterator` with an integral value_type.
 * and that  the second argument to generate(in, out):
     - satisfies `weakly_incrementable`
     - satisfies `indirectly_writable`
@@ -244,28 +285,28 @@ single 3.7 GHz Skylake core (using AVX-512 instructions).
 
 ### General properties of counter_based_engine:
 
-An instance of `counter_based_engine<PRF, CounterWords>`
+An instance of `counter_based_engine<PRF, c>`
 allows for
 
-    2^(in_bits*(in_N-CounterWords))
+    2^(in_bits*(in_count-c))
 
-*different, statistically independent* random sequences, each of length `PRF::result_N*2^(CounterWords*in_bits)`
+*different, statistically independent* random sequences, each of length `PRF::output_count*2^(c*input_word_size)`
 
-A counter_based_engine's size is: `sizeof(PRF::in_type) + PRF::result_N*sizeof(ResultType)`.  For example:
+A counter_based_engine's size is: `PRF::input_count*sizeof(PRF::input_value_type) + PRF::output_count*sizeof(result_type)`.  For example:
 
-- `counter_based_engine<uint64_t, philox4x64, 1>` defines 2^320 different random
+- `counter_based_engine<philox4x64, 1>` defines 2^320 different random
 sequences of length 2^66.  The size is 10 64-bit integers.
 
 The CounterWords template parameter allows long-period generators, even with
 PRFs that are inherently 32-bit.  For example:
 
-- `counter_based_engine<uint32_t, philox2x32, 1>` defines 2^64 different random
+- `counter_based_engine<philox2x32, 1>` defines 2^64 different random
 sequences of length *only* 2^33.  The size is 5 32-bit integers.  These sequences
 might be considered too short for some applications.
 
 but 
 
-- `counter_based_engine<uint32_t, philox2x32, 2>` defines 2^32 different random
+- `counter_based_engine<philox2x32, 2>` defines 2^32 different random
 sequences of length 2^65.  The size is 5 32-bit integers.  These sequences
 are long enough for any practical application (especially when one considers
 that there are 2^32 of them).

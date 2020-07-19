@@ -167,7 +167,6 @@ class threefry_prf {
         cc0 = c0; cc1 = c1; cc2 = c2; cc3 = c3;
 #endif
     }
-    using in_array_type = array<UIntType, 2*n>;
 public:
     using output_value_type = UIntType;
     using input_value_type = UIntType;
@@ -180,34 +179,26 @@ public:
     // the "final" OutputIterator2
     template<typename InputIterator1, typename OutputIterator2>
     OutputIterator2 operator()(InputIterator1 input, OutputIterator2 output){
-        if constexpr (n==2){
-            // N.B.  initializers are  evaluated in order, left-to-right.
-            array<input_value_type, input_count> inarray = {*input++, *input++, *input++, *input++};
-            return generate(ranges::single_view(inarray), output);
-        }else if constexpr (n==4){
-            array<input_value_type, input_count> inarray = {*input++, *input++, *input++, *input++, *input++, *input++, *input++, *input++};
-            return generate(ranges::single_view(inarray), output);
-        }            
+        return generate(ranges::single_view(input), output);
     }
 
     // More constraints?  We currently require that the first argument to
     // operator():
     //  - satisfies input_range
     //  - satisfies sized_range
-    //  - has a value_type that is_same as in_array_type, i.e., the value_type is an array
+    //  - has a range_value_type that is an iterator of integers
     // and that  the second argument:
     //  - satisfies weakly_incrementable
     //  - is indirectly_writable
     //  - has an integral value_type
-    template <ranges::input_range InputRangeOfInTypes, weakly_incrementable O>
-    requires ranges::sized_range<InputRangeOfInTypes> &&
-             is_same_v<iter_value_t<ranges::iterator_t<InputRangeOfInTypes>>, in_array_type> &&
+    template <ranges::input_range InRange, weakly_incrementable O>
+    requires ranges::sized_range<InRange> &&
+             integral<iter_value_t<ranges::range_value_t<InRange>>> &&
              integral<iter_value_t<O>> &&
              indirectly_writable<O, iter_value_t<O>>
-    O generate(InputRangeOfInTypes&& in, O result) const{
+    O generate(InRange&& in, O result) const{
         auto cp = ranges::begin(in);
-        auto nin = ranges::size(in);
-        auto nleft = nin;
+        auto nleft = ranges::size(in);
         // N.B.  simd_size=64 gives some spurious warnings about 64-byte alignment
 #if PRF_SIMD_SIZE_BYTES
         static constexpr int simd_size = PRF_SIMD_SIZE_BYTES;
@@ -223,11 +214,11 @@ public:
                 input_value_type c1 __attribute__((vector_size(simd_size)));
 
                 for(unsigned s=0; s<simd_N; ++s){
-                    const in_array_type& next = *cp++;
-                    c0[s] = next[0];
-                    c1[s] = next[1];
-                    k0[s] = next[2];
-                    k1[s] = next[3];
+                    auto initer = *cp++;
+                    c0[s] = *initer++;
+                    c1[s] = *initer++;
+                    k0[s] = *initer++;
+                    k1[s] = *initer++;
                 }
                 do2(c0, c1, k0, k1);
                 // If we were allowed to permute the outputs and if
@@ -254,15 +245,15 @@ public:
                 input_value_type c2 __attribute__((vector_size(simd_size)));
                 input_value_type c3 __attribute__((vector_size(simd_size)));
                 for(unsigned s=0; s<simd_N; ++s){
-                    const in_array_type& next = *cp++;
-                    c0[s] = next[0];
-                    c1[s] = next[1];
-                    c2[s] = next[2];
-                    c3[s] = next[3];
-                    k0[s] = next[4];
-                    k1[s] = next[5];
-                    k2[s] = next[6];
-                    k3[s] = next[7];
+                    auto initer = *cp++;
+                    c0[s] = *initer++;
+                    c1[s] = *initer++;
+                    c2[s] = *initer++;
+                    c3[s] = *initer++;
+                    k0[s] = *initer++;
+                    k1[s] = *initer++;
+                    k2[s] = *initer++;
+                    k3[s] = *initer++;
                 }
                 do4(c0, c1, c2, c3, k0, k1, k2, k3);
 #if PRF_ALLOW_PERMUTED_RESULTS
@@ -287,14 +278,24 @@ public:
 #endif // PRF_SIMD_SIZE_BYTES
 
         while(nleft--){
-            const in_array_type& next = *cp++;
+            auto initer = *cp++;
             if constexpr (n == 2){
-                auto [c0, c1, k0, k1] = next; // all are input_value_type
+                input_value_type c0 = *initer++ ;
+                input_value_type c1 = *initer++;
+                input_value_type k0 = *initer++;
+                input_value_type k1 = *initer++;
                 do2(c0, c1, k0, k1);
                 *result++ = c0;
                 *result++ = c1;
             }else if constexpr (n == 4){
-                auto [c0, c1, c2, c3, k0, k1, k2, k3] = next; // all are input_value_type
+                input_value_type c0 = *initer++;
+                input_value_type c1 = *initer++;
+                input_value_type c2 = *initer++;
+                input_value_type c3 = *initer++;
+                input_value_type k0 = *initer++;
+                input_value_type k1 = *initer++;
+                input_value_type k2 = *initer++;
+                input_value_type k3 = *initer++;
                 do4(c0, c1, c2, c3, k0, k1, k2, k3);
                 *result++ = c0;
                 *result++ = c1;
@@ -315,9 +316,6 @@ private:
 // See Salmon et al, or Schneier's original work on Threefish <FIXME
 // REF> for information about how the constants were obtained.
 
-// FIXME - the template alias lets the program choose a different value of R (good)
-// but it also forces the programmer to add an empty template parameter list if
-// the default value is desired (bad).  Some additional syntactic sugar is needed.
 template<size_t r>
 using threefry2x32_prf_r = threefry_prf<uint_least32_t, 32, 2, r, 0x1BD11BDA,
                                              13, 15, 26, 6, 17, 29, 16, 24>;

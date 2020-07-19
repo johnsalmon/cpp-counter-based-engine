@@ -29,29 +29,25 @@ public:
     // the "final" OutputIterator2
     template<typename InputIterator1, typename OutputIterator2>
     OutputIterator2 operator()(InputIterator1 input, OutputIterator2 output){
-        if constexpr (n==2){
-            // N.B.  initializers are  evaluated in order, left-to-right.
-            array<input_value_type, input_count> inarray = {*input++, *input++, *input++};
-            return generate(ranges::single_view(inarray), output);
-        }else if constexpr (n==4){
-            array<input_value_type, input_count> inarray = {*input++, *input++, *input++, *input++, *input++, *input++};
-            return generate(ranges::single_view(inarray), output);
-        }            
+        return generate(ranges::single_view(input), output);
     }
 
     // This is a candidate for the "iterator-based API" for bulk generation.  (Not in P2075R1)
-    template <typename InRange, weakly_incrementable O>
+    template <ranges::input_range InRange, weakly_incrementable O>
+    requires ranges::sized_range<InRange> &&
+             integral<iter_value_t<ranges::range_value_t<InRange>>> &&
+             integral<iter_value_t<O>> &&
+             indirectly_writable<O, iter_value_t<O>>
     O generate(InRange&& inrange, O result) const {
         // FIXME - InRange should be constrained to be a range of
-        // array-like objects.  InRange's value_type must itself have
-        // a value_type, and it must be indexable with square braces
-        // (though we could probably relax that).
-        static_assert(is_integral_v<typename ranges::range_value_t<InRange>::value_type>);
-        for(const auto& in : inrange){
+        // InputIterators.  Each InputIterator will be dereferenced
+        // exactly 3*n/2 times.
+        static_assert(is_integral_v<iter_value_t<ranges::range_value_t<InRange>>>);
+        for(auto initer : inrange){
             if constexpr (n == 2){
-                input_value_type R0 = in[0] & inmask;
-                input_value_type L0 = in[1] & inmask;
-                input_value_type K0 = in[2] & inmask;
+                input_value_type R0 = (*initer++) & inmask;
+                input_value_type L0 = (*initer++) & inmask;
+                input_value_type K0 = (*initer++) & inmask;
                 for(size_t i=0; i<r; ++i){
                     auto [hi, lo] = detail::mulhilo<w>(R0, MC[0]);
                     R0 = hi^K0^L0;
@@ -61,12 +57,12 @@ public:
                 *result++ = R0;
                 *result++ = L0;
             }else if constexpr (n == 4) {
-                input_value_type R0 = in[0] & inmask;
-                input_value_type L0 = in[1] & inmask;
-                input_value_type R1 = in[2] & inmask;
-                input_value_type L1 = in[3] & inmask;
-                input_value_type K0 = in[4] & inmask;
-                input_value_type K1 = in[5] & inmask;
+                input_value_type R0 = (*initer++) & inmask;
+                input_value_type L0 = (*initer++) & inmask;
+                input_value_type R1 = (*initer++) & inmask;
+                input_value_type L1 = (*initer++) & inmask;
+                input_value_type K0 = (*initer++) & inmask;
+                input_value_type K1 = (*initer++) & inmask;
                 for(size_t i=0; i<r; ++i){
                     auto [hi0, lo0] = detail::mulhilo<w>(R0, MC[0]);
                     auto [hi1, lo1] = detail::mulhilo<w>(R1, MC[2]);
